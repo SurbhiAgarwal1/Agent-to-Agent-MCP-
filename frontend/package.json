@@ -1,0 +1,14 @@
+{
+  "name": "emergency-command-center-ui",
+  "version": "1.0.0",
+  "description": "Part 13: Emergency Command Center UI for Blood Donation Coordination",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

@@ -1,199 +1,149 @@
-# 🚀 Agent-to-Agent Protocol Implementation (MCP / A2A)
+# Blood Donation Matching & Emergency Coordination System
 
-[![Protocol Version](https://img.shields.io/badge/Protocol-MCP%20v1.0.0-blue.svg)](https://modelcontextprotocol.io)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg?logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Official SDK](https://img.shields.io/badge/SDK-%40modelcontextprotocol%2Fsdk-orange.svg)](https://www.npmjs.com/package/@modelcontextprotocol/sdk)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-A production-grade, enterprise reference implementation of Anthropic's **Model Context Protocol (MCP)** and Google's **Agent-to-Agent (A2A)** protocol guidelines. Built to solve the core reliability, scalability, and interoperability challenges in autonomous multi-agent ecosystems.
+An autonomous, multi-agent emergency coordination system connecting hospitals, blood banks, and voluntary donors during critical blood shortages.
 
 ---
 
-## 👥 Project Identity & Metadata
+## 1. Project Overview & System Phases (Parts 1–16)
 
-- **Project Title**: Agent-to-Agent Protocol Implementation (MCP / A2A)
-- **Authors**: Surbhi Agarwal & Triveni Reddy
-- **Domain**: GenAI · AI/ML Infrastructure — Agent Interoperability
-- **Theme**: Agent Interoperability & Protocol Engineering
-- **Core Track**: AI/LLM Engineering, Protocol Design, Distributed Systems
-- **Primary Stack**: TypeScript / Python · Official MCP SDK (`@modelcontextprotocol/sdk`)
-- **Primary References**: Anthropic Model Context Protocol Spec · Google A2A Protocol Docs
-- **Target Audience**: AI infrastructure teams building reusable, standardized tool integrations for agent ecosystems
-- **Deliverables**: Published MCP Server, Compatible MCP Client (Claude Desktop / Code), Written Architecture Spec, Recorded Demo Video
-- **Version**: `1.0.0` (September 2026)
+The system is organized into a modular 16-part architecture:
+
+* **Part 1: Project Scaffolding & FastAPI Foundation** — Core application structure and environment configuration.
+* **Part 2: Relational Models & Synthetic Data** — SQLAlchemy ORM schema (`hospitals`, `blood_banks`, `blood_inventories`, `donors`, `blood_requests`, `matches`) and automated synthetic seeding.
+* **Part 3: Blood Request Lifecycle APIs** — CRUD endpoints for emergency requests with validation and status state transitions.
+* **Part 4: Requirement Agent** — Medical domain validation, input normalization, and hospital verification.
+* **Part 5: Matching Agent & RBC Engine** — Red blood cell ABO/Rh compatibility matrix with institutional stock prioritization.
+* **Part 6: Location Agent** — Spherical Haversine distance engine and urban emergency transit estimation.
+* **Part 7: Agent-to-Agent (A2A) Protocol** — Structured message envelope and in-process message bus (`app/agents/a2a/`) replacing direct function coupling.
+* **Part 8: Model Context Protocol (MCP) Server** — Exposes core agents as standardized MCP tools (`app/mcp/`) for external agentic and LLM tool calling.
+* **Part 9: Coordinator Agent** — Full coordination lifecycle owning the formal request state machine (`RECEIVED -> VALIDATED -> MATCHED -> LOCATED -> COMPLETED / FAILED`) and persistence.
+* **Part 10: Multi-Source Optimization Engine** — Combines multiple blood banks and voluntary donors to meet large unit quotas (`app/services/optimization_service.py`), respecting the 1-unit donor medical limit.
+* **Part 11: Real Routing & Road Network ETA** — Swappable `RoutingProvider` (`app/services/routing_provider.py`) supporting real road-network distance/ETA via OSRM with automatic Haversine fallback.
+* **Part 12: Notification Agent & Dispatch Alerting** — Multi-channel alerting (`app/agents/notification_agent.py`) notifying hospitals and dispatching pickup orders to blood banks/donors (Console, Email, SMS).
+* **Part 13: Emergency Command Center UI** — Real-time Single Page Application dashboard (`frontend/` and `/dashboard`) with live 5s polling, interactive dispatch, and coordination visualizer.
+* **Part 14: LLM Natural Language Interface** — Natural language interface (`app/llm/`) parsing free-form clinical dispatch text into validated actions via `POST /api/v1/nl-request`.
+* **Part 15: Authentication & Audit Logging** — JWT bearer token authentication, role-based access control (`HOSPITAL_STAFF`, `BLOOD_BANK_STAFF`, `ADMIN`), and immutable `AuditLog` records for sensitive actions.
+* **Part 16: Docker, CI/CD & Observability** — Multi-stage `Dockerfile`, `docker-compose.yml`, GitHub Actions workflow (`.github/workflows/ci.yml`), and real-time operational `/metrics`.
 
 ---
 
-## 📌 Problem Statement & Mission
+## 2. Multi-Agent & Service Architecture
 
-Modern AI agent ecosystems suffer from fragmented, non-standardized integration code ("glue code") when connecting Large Language Models (LLMs) to tools, APIs, and external datasets. 
-
-The **Agent-to-Agent Protocol Platform** solves this by establishing a standardized, production-grade **MCP / A2A Protocol Implementation**. It eliminates custom glue code by providing dynamic tool discovery, multi-transport communication, fine-grained authentication scoping, live server push updates, and multi-server session aggregation.
-
----
-
-## 🏗️ System Architecture
-
-### 1. System Topology Diagram
-
-```mermaid
-graph TD
-    subgraph ClientLayer["Client Layer (MCP Clients)"]
-        ClaudeClient["Claude Desktop / CLI MCP Client"]
-        WebPlayground["Web Playground & Live Protocol Inspector"]
-    end
-
-    subgraph TransportLayer["Swappable Transport Layer"]
-        StdioTrans["stdio Transport Adapter (Local IPC)"]
-        SSETrans["HTTP / SSE Transport Adapter (Networked Push)"]
-    end
-
-    subgraph SecurityLayer["Security & Policy Scoping"]
-        JWTAuth["Per-Client JWT Authentication"]
-        ScopeFilter["Permission & Tool Scope Filter Engine"]
-    end
-
-    subgraph RouterEngine["MCP Core Aggregator Router"]
-        MultiAggregator["Multi-Server Session Aggregator"]
-        VersionNegotiator["Schema Negotiation & Versioning Engine"]
-        MetricsExporter["Prometheus Metrics & Latency Monitor"]
-    end
-
-    subgraph ServerLayer["Target MCP Tool Servers"]
-        NotesServer["Notes & Knowledgebase Server"]
-        SearchServer["Semantic Search & RAG Tool"]
-        AuditLedger["Immutable Protocol Audit Ledger"]
-    end
-
-    %% Flow Connections
-    ClaudeClient --> StdioTrans
-    WebPlayground --> SSETrans
-
-    StdioTrans --> JWTAuth
-    SSETrans --> JWTAuth
-
-    JWTAuth --> ScopeFilter
-    ScopeFilter --> VersionNegotiator
-    VersionNegotiator --> MultiAggregator
-    MultiAggregator --> MetricsExporter
-
-    MultiAggregator --> NotesServer
-    MultiAggregator --> SearchServer
-    MultiAggregator --> AuditLedger
+```
+               [ Emergency Free-Text / REST API / UI ]
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │   Authentication & RBAC  │ (Part 15)
+                     └────────────┬─────────────┘
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │  NL / LLM Parser (NLP)   │ (Part 14)
+                     └────────────┬─────────────┘
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │    Coordinator Agent     │ (Part 9)
+                     │ (Full Lifecycle / State) │
+                     └────────────┬─────────────┘
+                                  │
+            ┌─────────────────────┼─────────────────────┐
+            ▼                     ▼                     ▼
+     ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+     │ Requirement  │      │   Matching   │      │   Location   │
+     │    Agent     │      │    Agent     │      │    Agent     │
+     │  (Validation)│      │(Compatibility)      │  (OSRM/ETA)  │
+     └──────────────┘      └──────────────┘      └──────────────┘
+            │                     │                     │
+            └─────────────────────┼─────────────────────┘
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │   Optimization Engine    │ (Part 10)
+                     │ (Multi-Source Allocation)│
+                     └────────────┬─────────────┘
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │    Notification Agent    │ (Part 12)
+                     │ (Hospital/Bank/Donor)    │
+                     └────────────┬─────────────┘
+                                  │
+                                  ▼
+                     ┌──────────────────────────┐
+                     │    Audit Log & Metrics   │ (Part 15 & 16)
+                     └──────────────────────────┘
 ```
 
 ---
 
-### 2. Protocol Interaction & Sequence Diagram
+## 3. Running with Docker Compose
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Developer / User
-    participant Client as MCP Client (Claude API)
-    participant Aggregator as Multi-Server Aggregator Proxy
-    participant Auth as Auth & Scope Engine
-    participant Server as Target MCP Server
-    participant SSE as Real-time Push Engine
+To spin up the entire system (FastAPI backend + Command Center frontend) in a single command:
 
-    User->>Client: Input Natural Language Query
-    Client->>Aggregator: Protocol Handshake & Capability Discovery
-    Aggregator->>Auth: Validate Client Credentials & Resolve Scopes
-    Auth-->>Aggregator: Authorized Tool Manifest
-    Aggregator-->>Client: Combined Tool & Resource Schema
-    
-    User->>Client: Prompt Execution
-    Client->>Aggregator: Invoke Tool Request (JSON-RPC)
-    Aggregator->>Server: Forward RPC Call over Selected Transport (stdio / SSE)
-    Server->>Server: Process Tool Logic & Validate Schemas
-    Server-->>Aggregator: Return Execution Payload
-    Aggregator-->>Client: Relay Output to LLM Context
-    Client-->>User: Synthesize Final Response
-
-    opt Server-Initiated Push Update
-        Server->>SSE: Resource Modified Notification
-        SSE-->>Client: Streaming Update via SSE Push Event
-        Client-->>User: Live Context Refreshed
-    end
-```
-
----
-
-## 🧰 Production Feature Matrix
-
-| Feature Tier | Feature Name | Description | Status |
-| :--- | :--- | :--- | :---: |
-| **Must-Have Core** | **MCP Server** | Exposes tools, resources, and schemas via official `@modelcontextprotocol/sdk` | ✅ Ready |
-| **Must-Have Core** | **MCP Client** | Dynamic capability discovery, session management, and LLM tool execution | ✅ Ready |
-| **Advanced** | **Dual Transport Support** | Swappable `stdio` (local process IPC) and `HTTP/SSE` (streaming push) | ✅ Ready |
-| **Advanced** | **Resource Subscriptions** | Server-initiated push updates for real-time data state updates | ✅ Ready |
-| **Advanced** | **Auth & Scope Filter** | Tiered per-client JWT authentication restricting available tools | ✅ Ready |
-| **Advanced** | **Multi-Server Aggregation** | Single client orchestrating and aggregating multiple MCP tool servers | ✅ Ready |
-| **Advanced** | **Schema Negotiation** | Backward-compatible version negotiation and schema fallback | ✅ Ready |
-| **Good-to-Have** | **Web Playground UI** | Interactive browser inspector with live message tracing & latency charts | ✅ Ready |
-| **Good-to-Have** | **Chaos Testing Suite** | Adversarial payload injection, network drop recovery & concurrency tests | ✅ Ready |
-
----
-
-## 🎯 Success Criteria & Verification
-
-- **Zero Manual Configuration**: Server is automatically discovered and consumed by standard MCP clients (Claude Desktop / Code) with zero custom setup.
-- **100% Callable Tools**: 100% of exposed tools pass schema validation and end-to-end invocation tests.
-- **Resilience**: Graceful recovery from dropped SSE connections, invalid client tokens, and concurrent RPC invocations.
-
----
-
-## 📁 Repository Structure
-
-```text
-Agent-to-Agent-MCP-/
-├── mcp-notes-project/
-│   ├── client/                  # MCP Client Implementation (TypeScript)
-│   ├── server/                  # MCP Server Implementation (TypeScript / Express)
-│   ├── PRD.md                   # Product Requirements Document
-│   ├── TRD.md                   # Technical Requirements Document
-│   ├── Project_Overview.md      # High-Level Architecture Overview
-│   └── README.md                # Component Guide               
-└── README.md                    # Master Project Documentation
-```
-
----
-
-## ⚡ Quick Start & Setup
-
-### Prerequisites
-- **Node.js**: `v20.0.0` or higher
-- **npm**: `v9.0.0` or higher
-- **Anthropic API Key**: Export `ANTHROPIC_API_KEY` in environment
-
-### 1. Installation
 ```bash
-git clone https://github.com/SurbhiAgarwal1/Agent-to-Agent-MCP-.git
-cd Agent-to-Agent-MCP-/mcp-notes-project
-npm install
+docker-compose up --build
 ```
 
-### 2. Run MCP Reference Server
+- **Backend API**: `http://localhost:8000`
+- **Swagger Documentation**: `http://localhost:8000/docs`
+- **Operational Metrics**: `http://localhost:8000/metrics`
+- **Command Center Dashboard**: `http://localhost:8000/dashboard` or `http://localhost:3000`
+
+---
+
+## 4. Local Development & Testing
+
+### Setup Environment
 ```bash
-cd server
-npm run build
-npm start
+python -m venv venv
+venv\Scripts\activate   # Windows
+# or source venv/bin/activate  # Linux/macOS
+
+pip install -r requirements.txt
 ```
 
-### 3. Run MCP Client
+### Run All Tests (120 Tests across Parts 1–16)
 ```bash
-# In a new terminal tab
-cd client
-npm run build
-npm start
+pytest -v
+```
+
+### Run Tests with Coverage
+```bash
+pytest -v --cov=app --cov-report=term-missing
+```
+
+### Run Local Backend Server
+```bash
+uvicorn app.main:app --reload --port 8000
 ```
 
 ---
 
-## 📄 License & Authorship
+## 5. API Reference Summary
 
-Distributed under the **MIT License**. See `LICENSE` for details.
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Service health status. |
+| `GET` | `/metrics` | Real-time operational request counts, latencies, and agent statistics. |
+| `GET` | `/dashboard` | Interactive Emergency Command Center web UI. |
+| `POST` | `/api/v1/auth/register` | Register new staff user with role. |
+| `POST` | `/api/v1/auth/login` | Authenticate and obtain JWT access token. |
+| `GET` | `/api/v1/auth/me` | Fetch currently authenticated user profile. |
+| `GET` | `/api/v1/auth/audit-logs` | Retrieve security and operational audit logs. |
+| `POST` | `/api/v1/blood-requests` | Submit an emergency blood request. |
+| `GET` | `/api/v1/blood-requests` | List all active blood requests. |
+| `POST` | `/api/v1/blood-requests/{id}/coordinate` | Trigger Coordinator Agent lifecycle & multi-source optimization. |
+| `POST` | `/api/v1/nl-request` | Free-form natural language blood request parser & dispatcher. |
+| `GET` | `/api/v1/mcp/tools` | List registered Model Context Protocol (MCP) tools. |
+| `POST` | `/api/v1/mcp/invoke` | Invoke MCP tools externally. |
 
-- **Maintained by**: **Surbhi Agarwal** & **Triveni Reddy**
-- **Date**: September 2026
+---
+
+## 6. Continuous Integration (CI/CD)
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) executes automatically on every `push` and `pull_request` to:
+1. Run syntax and lint checks across Python 3.11 and 3.12.
+2. Execute the entire 120-test test suite with code coverage assertions.
+3. Validate clean Docker image container builds for both backend and frontend.

@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blood Donation Matching & Emergency Coordination System</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .pulse-dot {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.15); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-800/80 backdrop-blur-md border-b border-slate-700/80 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-red-600 flex items-center justify-center text-white shadow-lg shadow-red-600/30">
+                    <i data-lucide="droplet" class="w-6 h-6 fill-current"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                        Blood Donation Matching System
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 font-semibold border border-red-500/30">Emergency OJT</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Multi-Agent Coordination & Proximity Dispatcher</p>
+                </div>
+            </div>
+
+            <!-- Status Indicator & Quick Links -->
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-dot"></span>
+                    <span id="backend-status" class="text-xs font-medium text-emerald-400">Backend Live</span>
+                </div>
+                <a href="/docs" target="_blank" class="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition flex items-center gap-1.5 font-medium border border-slate-600">
+                    <i data-lucide="file-code" class="w-3.5 h-3.5"></i>
+                    Swagger Docs
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Multi-Agent Architecture Progress Banner -->
+        <section class="bg-slate-800/50 rounded-2xl border border-slate-700 p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                    <i data-lucide="cpu" class="w-4 h-4 text-red-400"></i>
+                    Autonomous Multi-Agent Pipeline Status
+                </h2>
+                <span id="pipeline-status-badge" class="text-xs font-medium text-slate-400 px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                    Ready for Request
+                </span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div id="step-req-card" class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400">Agent 1</span>
+                        <span id="step-req-status" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Idle</span>
+                    </div>
+                    <div class="text-sm font-semibold text-slate-200 mt-1 flex items-center gap-2">
+                        <i data-lucide="check-circle" class="w-4 h-4 text-blue-400"></i>
+                        Requirement Agent
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Validates & normalizes medical payload</p>
+                </div>
+
+                <div id="step-match-card" class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400">Agent 2</span>
+                        <span id="step-match-status" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Idle</span>
+                    </div>
+                    <div class="text-sm font-semibold text-slate-200 mt-1 flex items-center gap-2">
+                        <i data-lucide="git-merge" class="w-4 h-4 text-purple-400"></i>
+                        Matching Agent
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">RBC ABO/Rh matrix & stock discovery</p>
+                </div>
+
+                <div id="step-loc-card" class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400">Agent 3</span>
+                        <span id="step-loc-status" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Idle</span>
+                    </div>
+                    <div class="text-sm font-semibold text-slate-200 mt-1 flex items-center gap-2">
+                        <i data-lucide="navigation" class="w-4 h-4 text-emerald-400"></i>
+                        Location Agent
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Haversine formula & straight-line ETA</p>
+                </div>
+
+                <div id="step-coord-card" class="p-3 rounded-xl bg-slate-900/60 border border-slate-800 transition">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400">Agent 4</span>
+                        <span id="step-coord-status" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Idle</span>
+                    </div>
+                    <div class="text-sm font-semibold text-slate-200 mt-1 flex items-center gap-2">
+                        <i data-lucide="cpu" class="w-4 h-4 text-amber-400"></i>
+                        Coordinator Agent
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Composite scoring & allocation planner</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Core Grid: Left Form & Right Results -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Left Panel: Hospital Emergency Request Form (5 cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                <div class="bg-slate-800/70 border border-slate-700/80 rounded-2xl p-5 shadow-lg">
+                    <div class="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-700">
+                        <div class="p-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20">
+                            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-sm font-bold text-white uppercase tracking-wide">Emergency Request</h2>
+                            <p class="text-xs text-slate-400">Lodge request to initiate matching</p>
+                        </div>
+                    </div>
+
+                    <form id="blood-request-form" class="space-y-4">
+                        <!-- Hospital Selector -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Requesting Hospital</label>
+                            <select id="hospital-select" required class="w-full px-3 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                                <option value="" disabled selected>Loading registered hospitals...</option>
+                            </select>
+                            <p id="hospital-address" class="text-[11px] text-slate-400 mt-1 italic"></p>
+                        </div>
+
+                        <!-- Blood Group -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Patient Blood Group</label>
+                            <div class="grid grid-cols-4 gap-2" id="blood-group-selector">
+                                <button type="button" data-val="O+" class="bg-option active py-2 text-center text-xs font-bold rounded-lg border border-red-500 bg-red-600/30 text-white">O+</button>
+                                <button type="button" data-val="O-" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">O-</button>
+                                <button type="button" data-val="A+" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">A+</button>
+                                <button type="button" data-val="A-" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">A-</button>
+                                <button type="button" data-val="B+" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">B+</button>
+                                <button type="button" data-val="B-" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">B-</button>
+                                <button type="button" data-val="AB+" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">AB+</button>
+                                <button type="button" data-val="AB-" class="bg-option py-2 text-center text-xs font-bold rounded-lg border border-slate-700 bg-slate-900 hover:border-slate-600 text-slate-300">AB-</button>
+                            </div>
+                            <input type="hidden" id="selected-blood-group" value="O+">
+                        </div>
+
+                        <!-- Units Required -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1.5">
+                                <label class="text-xs font-medium text-slate-300">Units Required (Pints)</label>
+                                <span id="units-val-badge" class="text-xs font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">4 Units</span>
+                            </div>
+                            <input type="range" id="units-slider" min="1" max="15" value="4" class="w-full accent-red-500 h-2 bg-slate-700 rounded-lg cursor-pointer">
+                        </div>
+
+                        <!-- Urgency -->
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Urgency Level</label>
+                            <select id="urgency-select" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                                <option value="CRITICAL" selected>CRITICAL (Immediate dispatch)</option>
+                                <option value="HIGH">HIGH (Urgent surgery)</option>
+                                <option value="MEDIUM">MEDIUM (Within 4-6 hours)</option>
+                                <option value="LOW">LOW (Scheduled transfusion)</option>
+                            </select>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <button type="submit" id="submit-btn" class="w-full mt-2 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-[0.98] transition font-semibold text-white text-sm shadow-lg shadow-red-600/30 flex items-center justify-center gap-2">
+                            <i data-lucide="radar" class="w-4 h-4"></i>
+                            <span>Lodge Request & Run Multi-Agent Matching</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Panel: Multi-Agent Live Results & Matching Cards (7 cols) -->
+            <div class="lg:col-span-7 space-y-4">
+                <div class="bg-slate-800/70 border border-slate-700/80 rounded-2xl p-5 shadow-lg min-h-[460px] flex flex-col">
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-700">
+                        <div class="flex items-center gap-2">
+                            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <i data-lucide="list-checks" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-sm font-bold text-white uppercase tracking-wide">Candidate Matches</h2>
+                                <p id="results-subtitle" class="text-xs text-slate-400">Ranked by medical compatibility & straight-line proximity</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <!-- Source Filters -->
+                            <div class="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-lg border border-slate-700 text-xs">
+                                <button id="filter-all" class="px-2.5 py-1 rounded bg-slate-700 text-white font-medium filter-btn">All</button>
+                                <button id="filter-banks" class="px-2.5 py-1 rounded text-slate-400 hover:text-white filter-btn">Banks</button>
+                                <button id="filter-donors" class="px-2.5 py-1 rounded text-slate-400 hover:text-white filter-btn">Donors</button>
+                            </div>
+                            <button id="orchestrate-active-btn" class="hidden px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition">
+                                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                                Orchestrate & Allocate
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Allocation Status Banner (Hidden until orchestrated) -->
+                    <div id="allocation-banner" class="hidden bg-gradient-to-r from-amber-950/40 via-slate-900/80 to-slate-900 border border-amber-500/40 rounded-xl p-3 mb-4 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="p-1 rounded bg-amber-500/20 text-amber-400">
+                                    <i data-lucide="cpu" class="w-4 h-4"></i>
+                                </span>
+                                <div>
+                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Orchestrator Allocation Plan</span>
+                                    <span id="allocation-status-badge" class="ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">FULFILLED</span>
+                                </div>
+                            </div>
+                            <span id="allocation-units-summary" class="text-xs font-semibold text-slate-200">3 / 3 Units Allocated</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                            <div id="allocation-progress-bar" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-1.5 rounded-full" style="width: 100%"></div>
+                        </div>
+                        <div id="orchestrator-audit-summary" class="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-800/80">
+                            <span>Composite Scoring: Proximity (40%) + Institution Stock (25%) + ABO Exact (20%) + Urgency (15%)</span>
+                            <button id="toggle-audit-log-btn" class="text-amber-400 hover:text-amber-300 text-[10px] font-medium flex items-center gap-1">
+                                <i data-lucide="file-text" class="w-3 h-3"></i> View Agent Audit Log
+                            </button>
+                        </div>
+                        <!-- Audit Log Collapsible -->
+                        <div id="audit-log-drawer" class="hidden mt-2 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[10px] text-slate-300 space-y-1 max-h-36 overflow-y-auto">
+                        </div>
+                    </div>
+
+                    <!-- Metrics Header -->
+                    <div id="metrics-bar" class="hidden grid grid-cols-3 gap-2 mb-4">
+                        <div class="bg-slate-900/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
+                            <p class="text-[10px] text-slate-400 uppercase">Total Matches</p>
+                            <p id="metric-total" class="text-base font-bold text-white">0</p>
+                        </div>
+                        <div class="bg-slate-900/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
+                            <p class="text-[10px] text-slate-400 uppercase">Nearest Source</p>
+                            <p id="metric-nearest" class="text-base font-bold text-emerald-400">-- km</p>
+                        </div>
+                        <div class="bg-slate-900/80 border border-slate-700/60 rounded-xl p-2.5 text-center">
+                            <p class="text-[10px] text-slate-400 uppercase">Estimated Min ETA</p>
+                            <p id="metric-eta" class="text-base font-bold text-blue-400">-- mins</p>
+                        </div>
+                    </div>
+
+                    <!-- Matches Container -->
+                    <div id="matches-container" class="flex-1 overflow-y-auto max-h-[460px] space-y-3 pr-1">
+                        <!-- Default empty state -->
+                        <div class="h-full flex flex-col items-center justify-center py-16 text-center text-slate-500">
+                            <i data-lucide="inbox" class="w-12 h-12 mb-3 text-slate-600 stroke-1"></i>
+                            <p class="text-sm font-medium text-slate-400">No active request submitted yet</p>
+                            <p class="text-xs text-slate-500 max-w-sm mt-1">Select a hospital and blood group on the left, then click "Lodge Request" to trigger the autonomous agents.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Historical Blood Requests Log -->
+        <section class="bg-slate-800/70 border border-slate-700/80 rounded-2xl p-5 shadow-lg">
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-700">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="history" class="w-4 h-4 text-slate-400"></i>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Recent Blood Requests Log</h3>
+                </div>
+                <button id="refresh-requests-btn" class="text-xs px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition flex items-center gap-1">
+                    <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                    Refresh
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="text-slate-400 border-b border-slate-700/60">
+                            <th class="py-2.5 px-3">Req ID</th>
+                            <th class="py-2.5 px-3">Hospital ID</th>
+                            <th class="py-2.5 px-3">Blood Group</th>
+                            <th class="py-2.5 px-3">Units</th>
+                            <th class="py-2.5 px-3">Urgency</th>
+                            <th class="py-2.5 px-3">Status</th>
+                            <th class="py-2.5 px-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requests-table-body" class="divide-y divide-slate-800 text-slate-300">
+                        <tr>
+                            <td colspan="7" class="py-4 text-center text-slate-500">Loading requests...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-950 border-t border-slate-800 py-3 text-center text-xs text-slate-500">
+        Blood Donation Matching & Emergency Coordination System &bull; Student OJT Project
+    </footer>
+
+    <!-- Frontend Interactive Script -->
+    <script>
+        // State
+        let allMatches = [];
+        let currentFilter = 'ALL';
+        let hospitalsList = [];
+        let currentRequestId = null;
+        let lastOrchestrationResult = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            await checkHealth();
+            await loadHospitals();
+            await loadRecentRequests();
+            initEventHandlers();
+        });
+
+        // 1. Health Check
+        async function checkHealth() {
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                const badge = document.getElementById('backend-status');
+                if (data.status === 'healthy') {
+                    badge.innerText = 'Backend Live (SQLite)';
+                }
+            } catch (e) {
+                const badge = document.getElementById('backend-status');
+                badge.innerText = 'Backend Offline';
+                badge.classList.remove('text-emerald-400');
+                badge.classList.add('text-red-400');
+            }
+        }
+
+        // 2. Load Hospitals
+        async function loadHospitals() {
+            try {
+                const res = await fetch('/api/v1/hospitals');
+                hospitalsList = await res.json();
+                const select = document.getElementById('hospital-select');
+                select.innerHTML = '';
+                hospitalsList.forEach(h => {
+                    const opt = document.createElement('option');
+                    opt.value = h.hospital_id;
+                    opt.textContent = `${h.name} (Hospital #${h.hospital_id})`;
+                    select.appendChild(opt);
+                });
+                if (hospitalsList.length > 0) {
+                    select.value = hospitalsList[0].hospital_id;
+                    updateHospitalAddress(hospitalsList[0].hospital_id);
+                }
+            } catch (e) {
+                console.error('Failed to load hospitals:', e);
+            }
+        }
+
+        function updateHospitalAddress(hospitalId) {
+            const h = hospitalsList.find(x => x.hospital_id == hospitalId);
+            const addr = document.getElementById('hospital-address');
+            if (h) {
+                addr.textContent = `Location: ${h.address} (${h.latitude}, ${h.longitude})`;
+            }
+        }
+
+        // 3. Event Handlers
+        function initEventHandlers() {
+            // Blood Group Selector Buttons
+            document.querySelectorAll('.bg-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.bg-option').forEach(b => {
+                        b.classList.remove('border-red-500', 'bg-red-600/30', 'text-white');
+                        b.classList.add('border-slate-700', 'bg-slate-900', 'text-slate-300');
+                    });
+                    btn.classList.remove('border-slate-700', 'bg-slate-900', 'text-slate-300');
+                    btn.classList.add('border-red-500', 'bg-red-600/30', 'text-white');
+                    document.getElementById('selected-blood-group').value = btn.dataset.val;
+                });
+            });
+
+            // Units Slider
+            const slider = document.getElementById('units-slider');
+            const unitsBadge = document.getElementById('units-val-badge');
+            slider.addEventListener('input', (e) => {
+                unitsBadge.textContent = `${e.target.value} Units`;
+            });
+
+            // Hospital select change
+            document.getElementById('hospital-select').addEventListener('change', (e) => {
+                updateHospitalAddress(e.target.value);
+            });
+
+            // Filter Buttons
+            document.getElementById('filter-all').addEventListener('click', () => setFilter('ALL'));
+            document.getElementById('filter-banks').addEventListener('click', () => setFilter('BLOOD_BANK'));
+            document.getElementById('filter-donors').addEventListener('click', () => setFilter('DONOR'));
+
+            // Orchestrate Active Button
+            document.getElementById('orchestrate-active-btn').addEventListener('click', async () => {
+                if (currentRequestId) {
+                    await orchestrateRequest(currentRequestId);
+                }
+            });
+
+            // Audit log drawer toggle
+            document.getElementById('toggle-audit-log-btn').addEventListener('click', () => {
+                const drawer = document.getElementById('audit-log-drawer');
+                drawer.classList.toggle('hidden');
+            });
+
+            // Refresh requests
+            document.getElementById('refresh-requests-btn').addEventListener('click', loadRecentRequests);
+
+            // Form Submit
+            document.getElementById('blood-request-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await submitEmergencyRequest();
+            });
+        }
+
+        function setFilter(type) {
+            currentFilter = type;
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.remove('bg-slate-700', 'text-white');
+                b.classList.add('text-slate-400');
+            });
+            if (type === 'ALL') document.getElementById('filter-all').classList.add('bg-slate-700', 'text-white');
+            if (type === 'BLOOD_BANK') document.getElementById('filter-banks').classList.add('bg-slate-700', 'text-white');
+            if (type === 'DONOR') document.getElementById('filter-donors').classList.add('bg-slate-700', 'text-white');
+            renderMatches();
+        }
+
+        // 4. Submit Emergency Request & Run 4-Agent Pipeline
+        async function submitEmergencyRequest() {
+            const submitBtn = document.getElementById('submit-btn');
+            const originalBtnHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span> Orchestrating Autonomous Agents...`;
+
+            updateAgentStatus('req', 'running', 'Validating...');
+            updateAgentStatus('match', 'idle', 'Waiting');
+            updateAgentStatus('loc', 'idle', 'Waiting');
+            updateAgentStatus('coord', 'idle', 'Waiting');
+            document.getElementById('pipeline-status-badge').textContent = 'Pipeline Running';
+            document.getElementById('pipeline-status-badge').className = 'text-xs font-medium text-amber-400 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30';
+
+            try {
+                const hospitalId = parseInt(document.getElementById('hospital-select').value);
+                const bloodGroup = document.getElementById('selected-blood-group').value;
+                const units = parseInt(document.getElementById('units-slider').value);
+                const urgency = document.getElementById('urgency-select').value;
+
+                // Step 1: Create Request
+                const createRes = await fetch('/api/v1/blood-requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        hospital_id: hospitalId,
+                        blood_group: bloodGroup,
+                        units_required: units,
+                        urgency: urgency
+                    })
+                });
+
+                if (!createRes.ok) {
+                    const err = await createRes.json();
+                    throw new Error(err.detail || 'Failed to create blood request');
+                }
+
+                const createdRequest = await createRes.json();
+                currentRequestId = createdRequest.request_id;
+                updateAgentStatus('req', 'done', 'Verified OK');
+
+                // Step 2 & 3: Run Matching & Location Agents
+                updateAgentStatus('match', 'running', 'Searching RBC...');
+                updateAgentStatus('loc', 'running', 'Routing...');
+
+                // Step 4: Run Coordinator Orchestration
+                updateAgentStatus('coord', 'running', 'Allocating...');
+                const orchRes = await fetch(`/api/v1/blood-requests/${createdRequest.request_id}/orchestrate`, {
+                    method: 'POST'
+                });
+
+                if (!orchRes.ok) {
+                    throw new Error('Coordinator Agent orchestration failed');
+                }
+
+                const orchData = await orchRes.json();
+                lastOrchestrationResult = orchData;
+
+                updateAgentStatus('match', 'done', `Discovery Complete`);
+                updateAgentStatus('loc', 'done', `ETAs Computed`);
+                updateAgentStatus('coord', 'done', `${orchData.fulfillment_status}`);
+
+                document.getElementById('pipeline-status-badge').textContent = `Orchestrated: ${orchData.fulfillment_status}`;
+                document.getElementById('pipeline-status-badge').className = 'text-xs font-medium text-emerald-400 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30';
+
+                // Display Allocation Plan & Matches
+                allMatches = [...orchData.allocated_sources, ...orchData.standby_sources];
+                renderAllocationBanner(orchData);
+                renderMatches();
+                await loadRecentRequests();
+
+                document.getElementById('orchestrate-active-btn').classList.remove('hidden');
+
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+                updateAgentStatus('req', 'error', 'Failed');
+                updateAgentStatus('coord', 'error', 'Failed');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHtml;
+                lucide.createIcons();
+            }
+        }
+
+        // 5. Trigger Coordinator Orchestration for Any Request
+        async function orchestrateRequest(requestId) {
+            updateAgentStatus('req', 'done', 'Verified');
+            updateAgentStatus('match', 'running', 'Searching...');
+            updateAgentStatus('loc', 'running', 'Routing...');
+            updateAgentStatus('coord', 'running', 'Allocating...');
+
+            try {
+                const res = await fetch(`/api/v1/blood-requests/${requestId}/orchestrate`, {
+                    method: 'POST'
+                });
+                if (!res.ok) throw new Error('Orchestration failed for Request #' + requestId);
+
+                const data = await res.json();
+                lastOrchestrationResult = data;
+                currentRequestId = requestId;
+
+                updateAgentStatus('match', 'done', 'Discovery OK');
+                updateAgentStatus('loc', 'done', 'ETAs Computed');
+                updateAgentStatus('coord', 'done', `${data.fulfillment_status}`);
+
+                allMatches = [...data.allocated_sources, ...data.standby_sources];
+                renderAllocationBanner(data);
+                renderMatches();
+                await loadRecentRequests();
+
+                document.getElementById('results-subtitle').textContent = `Allocation Plan for Request #${requestId} (${data.hospital.name})`;
+                document.getElementById('orchestrate-active-btn').classList.remove('hidden');
+
+            } catch (e) {
+                alert(`Failed to orchestrate request #${requestId}: ${e.message}`);
+            }
+        }
+
+        function updateAgentStatus(agent, state, text) {
+            const card = document.getElementById(`step-${agent}-card`);
+            const statusBadge = document.getElementById(`step-${agent}-status`);
+            statusBadge.textContent = text;
+
+            if (state === 'running') {
+                statusBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30';
+                card.className = 'p-3 rounded-xl bg-slate-900 border border-amber-500/50 shadow-sm';
+            } else if (state === 'done') {
+                statusBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                card.className = 'p-3 rounded-xl bg-slate-900 border border-emerald-500/40 shadow-sm';
+            } else if (state === 'error') {
+                statusBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30';
+                card.className = 'p-3 rounded-xl bg-slate-900 border border-red-500/50 shadow-sm';
+            } else {
+                statusBadge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400';
+                card.className = 'p-3 rounded-xl bg-slate-900/60 border border-slate-800';
+            }
+        }
+
+        // Render Allocation Banner & Audit Log
+        function renderAllocationBanner(orchData) {
+            const banner = document.getElementById('allocation-banner');
+            banner.classList.remove('hidden');
+
+            const badge = document.getElementById('allocation-status-badge');
+            badge.textContent = orchData.fulfillment_status;
+            if (orchData.fulfillment_status === 'FULFILLED') {
+                badge.className = 'ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            } else if (orchData.fulfillment_status === 'PARTIALLY_FULFILLED') {
+                badge.className = 'ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+            } else {
+                badge.className = 'ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-400 border border-red-500/30';
+            }
+
+            const pct = Math.min(100, Math.round((orchData.units_allocated / orchData.units_required) * 100));
+            document.getElementById('allocation-units-summary').textContent = `${orchData.units_allocated} / ${orchData.units_required} Units Allocated (${pct}%)`;
+            document.getElementById('allocation-progress-bar').style.width = `${pct}%`;
+
+            // Populate Audit Drawer
+            const drawer = document.getElementById('audit-log-drawer');
+            if (orchData.execution_log && orchData.execution_log.length > 0) {
+                drawer.innerHTML = orchData.execution_log.map(log => `
+                    <div class="flex items-start gap-2">
+                        <span class="text-amber-400 font-bold shrink-0">[${log.step}]</span>
+                        <span class="text-slate-300">${log.message}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // 6. Render Matches with Scoring & Allocation
+        function renderMatches() {
+            const container = document.getElementById('matches-container');
+            const metricsBar = document.getElementById('metrics-bar');
+
+            const filtered = allMatches.filter(m => {
+                if (currentFilter === 'ALL') return true;
+                return m.source_type === currentFilter;
+            });
+
+            if (allMatches.length > 0) {
+                metricsBar.classList.remove('hidden');
+                document.getElementById('metric-total').textContent = allMatches.length;
+                document.getElementById('metric-nearest').textContent = `${allMatches[0].distance_km} km`;
+                document.getElementById('metric-eta').textContent = allMatches[0].estimated_time;
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="h-64 flex flex-col items-center justify-center text-center text-slate-500">
+                        <i data-lucide="alert-circle" class="w-8 h-8 mb-2 text-slate-600"></i>
+                        <p class="text-sm font-medium text-slate-400">No matches found for this filter</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = filtered.map((m) => {
+                const isBank = m.source_type === 'BLOOD_BANK';
+                const typeColor = isBank ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                const typeLabel = isBank ? 'Blood Bank' : 'Voluntary Donor';
+                const typeIcon = isBank ? 'building-2' : 'user';
+
+                const isAllocated = m.units_allocated !== undefined && m.units_allocated > 0;
+                const allocBadge = isAllocated
+                    ? `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1"><i data-lucide="check" class="w-3 h-3"></i> Allocated: ${m.units_allocated} unit${m.units_allocated > 1 ? 's' : ''}</span>`
+                    : `<span class="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-800 text-slate-400 border border-slate-700">Standby Backup</span>`;
+
+                const scoreBadge = m.priority_score !== undefined
+                    ? `<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">Score: ${m.priority_score}/100</span>`
+                    : '';
+
+                return `
+                    <div class="p-3.5 rounded-xl ${isAllocated ? 'bg-slate-900 border-emerald-500/40' : 'bg-slate-900/80 border-slate-700/80'} border hover:border-slate-600 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                        <div class="flex items-start gap-3">
+                            <div class="w-9 h-9 rounded-lg ${typeColor} border flex items-center justify-center shrink-0 mt-0.5">
+                                <i data-lucide="${typeIcon}" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-sm font-bold text-white">${m.name}</span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${typeColor} border">${typeLabel}</span>
+                                    ${allocBadge}
+                                    ${scoreBadge}
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                    <i data-lucide="map-pin" class="w-3 h-3 text-slate-500"></i>
+                                    ${m.address}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t border-slate-800 sm:border-0">
+                            <!-- Blood Group & Stock -->
+                            <div class="text-center sm:text-right">
+                                <div class="flex items-center gap-1.5 justify-end">
+                                    <span class="text-xs font-extrabold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/30">${m.blood_group}</span>
+                                    <span class="text-xs font-medium text-slate-300">${m.units_available} unit${m.units_available > 1 ? 's' : ''}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Available Stock</p>
+                            </div>
+
+                            <!-- Distance & ETA -->
+                            <div class="text-right bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/60">
+                                <div class="text-xs font-bold text-emerald-400 flex items-center gap-1 justify-end">
+                                    <i data-lucide="navigation" class="w-3 h-3"></i>
+                                    ${m.distance_km} km
+                                </div>
+                                <p class="text-[10px] text-slate-400 font-medium">${m.estimated_time}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        // 7. Load Recent Requests Log with Both Actions
+        async function loadRecentRequests() {
+            const tbody = document.getElementById('requests-table-body');
+            try {
+                const res = await fetch('/api/v1/blood-requests');
+                const requests = await res.json();
+
+                if (!requests || requests.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No blood requests recorded yet.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = requests.map(r => {
+                    let statusBadge = 'bg-slate-700 text-slate-300';
+                    if (r.status === 'PENDING') statusBadge = 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+                    if (r.status === 'PROCESSING') statusBadge = 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+                    if (r.status === 'FULFILLED') statusBadge = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+                    if (r.status === 'PARTIALLY_FULFILLED') statusBadge = 'bg-purple-500/20 text-purple-400 border border-purple-500/30';
+                    if (r.status === 'CANCELLED') statusBadge = 'bg-red-500/20 text-red-400 border border-red-500/30';
+
+                    return `
+                        <tr class="hover:bg-slate-800/40 transition">
+                            <td class="py-2.5 px-3 font-mono font-bold text-slate-200">#${r.request_id}</td>
+                            <td class="py-2.5 px-3 text-slate-400">Hospital ${r.hospital_id}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded bg-red-500/10 text-red-400 font-bold border border-red-500/20">${r.blood_group}</span></td>
+                            <td class="py-2.5 px-3 font-semibold">${r.units_required}</td>
+                            <td class="py-2.5 px-3 text-slate-300 font-medium">${r.urgency}</td>
+                            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${statusBadge}">${r.status}</span></td>
+                            <td class="py-2.5 px-3">
+                                <div class="flex items-center gap-1.5">
+                                    <button onclick="orchestrateRequest(${r.request_id})" class="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-[11px] font-semibold text-white transition flex items-center gap-1 shadow-sm">
+                                        <i data-lucide="zap" class="w-3 h-3"></i> Orchestrate
+                                    </button>
+                                    <button onclick="viewMatchesForRequest(${r.request_id})" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-[11px] font-medium text-slate-200 transition flex items-center gap-1">
+                                        <i data-lucide="eye" class="w-3 h-3"></i> Matches
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                lucide.createIcons();
+            } catch (e) {
+                console.error('Failed to load recent requests:', e);
+            }
+        }
+
+        async function viewMatchesForRequest(requestId) {
+            updateAgentStatus('req', 'done', 'Verified');
+            updateAgentStatus('match', 'running', 'Fetching...');
+            updateAgentStatus('loc', 'running', 'Calculating...');
+            updateAgentStatus('coord', 'idle', 'Idle');
+
+            try {
+                const res = await fetch(`/api/v1/blood-requests/${requestId}/matches`);
+                const data = await res.json();
+                allMatches = data.matches;
+                currentRequestId = requestId;
+                updateAgentStatus('match', 'done', `${data.matches_count} Found`);
+                updateAgentStatus('loc', 'done', 'Haversine Computed');
+                renderMatches();
+                document.getElementById('results-subtitle').textContent = `Matches for Blood Request #${requestId} (${data.hospital.name})`;
+                document.getElementById('orchestrate-active-btn').classList.remove('hidden');
+                document.getElementById('allocation-banner').classList.add('hidden');
+            } catch (e) {
+                alert('Failed to fetch matches for request #' + requestId);
+            }
+        }
+    </script>
+</body>
+</html>

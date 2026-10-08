@@ -1,0 +1,38 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blood_coordination_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=Blood Donation Matching & Emergency Coordination System
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:///./data/blood_donation.db
+      - ROUTING_PROVIDER=haversine
+      - LLM_PROVIDER=builtin
+      - JWT_SECRET_KEY=production-emergency-blood-key-928f01a3
+    volumes:
+      - blood_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: blood_command_center_ui
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  blood_data:

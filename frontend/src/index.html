@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emergency Command Center — Blood Donation Matching System</title>
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="logo">
+      <span class="icon">🩸</span>
+      <h1>Emergency Command Center</h1>
+    </div>
+    <div class="live-indicator">
+      <span class="pulse-dot"></span>
+      <span id="polling-status">LIVE SYNC (5s)</span>
+    </div>
+  </header>
+
+  <!-- Autonomous Multi-Agent Pipeline Banner -->
+  <section class="agent-banner">
+    <div class="banner-title">
+      <h2>🤖 Autonomous Multi-Agent System Pipeline</h2>
+      <span id="pipeline-status" class="status-pill idle">All Agents Ready</span>
+    </div>
+    <div class="agents-grid">
+      <div class="agent-card" id="card-req-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Agent 1</span>
+          <span class="agent-state" id="state-req">Active / Ready</span>
+        </div>
+        <div class="agent-name">📋 Requirement Agent</div>
+        <div class="agent-desc">Validates medical criteria, urgency, and hospital identity.</div>
+      </div>
+      <div class="agent-card" id="card-match-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Agent 2</span>
+          <span class="agent-state" id="state-match">Active / Ready</span>
+        </div>
+        <div class="agent-name">🧬 Matching Agent</div>
+        <div class="agent-desc">ABO/Rh compatibility engine & inventory discovery.</div>
+      </div>
+      <div class="agent-card" id="card-loc-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Agent 3</span>
+          <span class="agent-state" id="state-loc">Active / Ready</span>
+        </div>
+        <div class="agent-name">🗺️ Location Agent</div>
+        <div class="agent-desc">Road network routing & real-time travel ETA estimation.</div>
+      </div>
+      <div class="agent-card" id="card-opt-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Engine 4</span>
+          <span class="agent-state" id="state-opt">Active / Ready</span>
+        </div>
+        <div class="agent-name">⚡ Optimization Engine</div>
+        <div class="agent-desc">Multi-source allocation satisfying unit quotas.</div>
+      </div>
+      <div class="agent-card" id="card-coord-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Agent 5</span>
+          <span class="agent-state" id="state-coord">Active / Ready</span>
+        </div>
+        <div class="agent-name">🧠 Coordinator Agent</div>
+        <div class="agent-desc">End-to-end request lifecycle & database persistence.</div>
+      </div>
+      <div class="agent-card" id="card-notif-agent">
+        <div class="agent-header">
+          <span class="agent-badge">Agent 6</span>
+          <span class="agent-state" id="state-notif">Active / Ready</span>
+        </div>
+        <div class="agent-name">🔔 Notification Agent</div>
+        <div class="agent-desc">Dispatches alerts to hospitals & pickup orders to donors.</div>
+      </div>
+    </div>
+  </section>
+
+  <main class="dashboard-grid">
+    <!-- View 1: Create Request Form -->
+    <section class="card form-panel">
+      <h2>🚨 Create Emergency Blood Request</h2>
+      <form id="create-request-form">
+        <div class="form-group">
+          <label for="hospital-id">Hospital</label>
+          <select id="hospital-id" required>
+            <option value="1">General Hospital (ID #1)</option>
+            <option value="2">City Care Clinic (ID #2)</option>
+            <option value="3">Apex Trauma Center (ID #3)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="blood-group">Blood Group</label>
+            <select id="blood-group" required>
+              <option value="A+">A+</option>
+              <option value="A-">A-</option>
+              <option value="B+">B+</option>
+              <option value="B-">B-</option>
+              <option value="AB+">AB+</option>
+              <option value="AB-">AB-</option>
+              <option value="O+">O+</option>
+              <option value="O-">O-</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="units-required">Units Needed</label>
+            <input type="number" id="units-required" min="1" max="50" value="2" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="urgency">Urgency Level</label>
+          <select id="urgency" required>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="HIGH" selected>HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+        </div>
+        <button type="submit" id="btn-submit-request" class="btn-primary">Dispatch Request</button>
+      </form>
+    </section>
+
+    <!-- View 2: Active Blood Requests List -->
+    <section class="card list-panel">
+      <div class="panel-header">
+        <h2>📋 Active Emergency Requests</h2>
+        <button id="btn-refresh" class="btn-secondary">Refresh</button>
+      </div>
+      <div id="requests-list-container">
+        <table class="data-table" id="requests-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Hospital</th>
+              <th>Group</th>
+              <th>Units</th>
+              <th>Urgency</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="requests-tbody">
+            <!-- Dynamic entries populated via app.js -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- View 3: Coordinator Fulfillment Plan Detail -->
+    <section class="card detail-panel" id="plan-detail-card">
+      <h2>⚡ Coordinator Fulfillment Plan</h2>
+      <div id="plan-detail-content">
+        <p class="placeholder-text">Select a request or click "Coordinate" above to view multi-source fulfillment plan.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/frontend/app.js"></script>
+</body>
+</html>
