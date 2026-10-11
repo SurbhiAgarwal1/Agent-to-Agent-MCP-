@@ -3,7 +3,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-120%2F120%20passing-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-189%2F189%20passing-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-92%25-success.svg)](tests/)
 [![A2A Protocol](https://img.shields.io/badge/Architecture-Agent--to--Agent%20(A2A)-purple.svg)](app/agents/a2a/)
 [![MCP Server](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-orange.svg)](app/mcp/)
@@ -16,7 +16,7 @@
 
 During mass casualty incidents, traumatic surgeries, and acute clinical shortages, **every minute spent locating compatible blood units impacts patient survival rates**. Traditional healthcare supply chains suffer from fragmented communications, manual phone calls, and siloed inventory databases that fail to aggregate multi-source quotas when a single blood bank lacks sufficient stock.
 
-The **Blood Donation Matching & Emergency Coordination System** is a production-grade, autonomous multi-agent platform designed to solve emergency blood logistics in real time. Built with **FastAPI**, an **Agent-to-Agent (A2A) Pub/Sub Message Bus**, and an Anthropic-compliant **Model Context Protocol (MCP)** server, the platform coordinates specialized autonomous agents to validate clinical requests, determine erythrocyte (RBC) immunological compatibility, calculate real road network routing, execute multi-source combinatorial optimization, and dispatch emergency alerts across multichannel communication bridges.
+The **Blood Donation Matching & Emergency Coordination System** is a prototype multi-agent platform for emergency blood logistics. Built with **FastAPI**, an in-process **Agent-to-Agent (A2A) message bus**, and an MCP-style tool server (REST endpoints exposing JSON-schema tools), the platform coordinates specialized autonomous agents to validate clinical requests, determine erythrocyte (RBC) immunological compatibility, calculate real road network routing, execute multi-source combinatorial optimization, and dispatch emergency alerts across multichannel communication bridges.
 
 ---
 
@@ -30,14 +30,14 @@ The **Blood Donation Matching & Emergency Coordination System** is a production-
 7. [API Reference & Clinical Dispatch](#-api-reference--clinical-dispatch)
 8. [Docker Compose & Deployment](#-docker-compose--deployment)
 9. [Local Development & Verification](#-local-development--verification)
-10. [Test Suite & Quality Assurance (120 Tests)](#-test-suite--quality-assurance-120-tests)
+10. [Test Suite & Quality Assurance (189 Tests)](#-test-suite--quality-assurance-189-tests)
 11. [Project Directory Structure](#-project-directory-structure)
 
 ---
 
 ## 🏗️ System Architecture & Flow
 
-The system orchestrates an asynchronous pipeline separating concerns between clinical intake, immunological compatibility, spatial routing, combinatorial optimization, and external dispatch.
+The system orchestrates a pipeline separating concerns between clinical intake, immunological compatibility, spatial routing, combinatorial optimization, and external dispatch.
 
 ```
                   ┌─────────────────────────────────────────────────────────┐
@@ -46,7 +46,7 @@ The system orchestrates an asynchronous pipeline separating concerns between cli
                                                │
                                                ▼
                   ┌─────────────────────────────────────────────────────────┐
-                  │       Enterprise Auth & Role-Based Access Control       │  
+                  │       Auth & Role-Based Access Control                 │  
                   │          [JWT Bearer Tokens, Bcrypt Password Hash]      │
                   └────────────────────────────┬────────────────────────────┘
                                                │
@@ -89,7 +89,7 @@ The system orchestrates an asynchronous pipeline separating concerns between cli
                                                ▼
                   ┌─────────────────────────────────────────────────────────┐
                   │              Audit Logging & System Observability       │  
-                  │           [Structured JSON Audits, Prometheus Metrics]  │
+                  │           [Audit log table, JSON metrics snapshot]  │
                   └─────────────────────────────────────────────────────────┘
 ```
 
@@ -107,16 +107,16 @@ The system is engineered as an end-to-end, phased 16-part architecture:
 | **Part 4** | **Requirement Agent** | Clinical request triage, blood type syntax verification, clinical urgency normalization, and hospital verification. | Autonomous Agent, Clinical RegEx |
 | **Part 5** | **Matching Agent & RBC Engine** | Red blood cell ABO/Rh-D immunological compatibility matrix, cross-matching institutional inventories and voluntary donors. | Medical Compatibility Matrix |
 | **Part 6** | **Location Agent** | Geospatial spherical coordinate distance engine using the Great-Circle Haversine formula and average urban transit speeds. | Spherical Trigonometry, Haversine |
-| **Part 7** | **Agent-to-Agent (A2A) Bus** | Decoupled in-memory asynchronous pub/sub message broker with typed message envelopes (`A2AMessage`). | AsyncIO, Event-Driven Architecture |
-| **Part 8** | **Model Context Protocol (MCP)** | JSON-RPC 2.0 compliant MCP server exposing agents as standardized tools (`validate_blood_request`, `find_blood_sources`, `calculate_distance`). | Model Context Protocol Specification |
+| **Part 7** | **Agent-to-Agent (A2A) Bus** | In-process, synchronous message bus with typed message envelopes (`A2AMessage`). | Python, typed envelopes |
+| **Part 8** | **Model Context Protocol (MCP)** | MCP-style tool server over REST (list / describe / invoke endpoints) exposing agents as tools (`validate_blood_request`, `find_blood_sources`, `calculate_distance`). Not JSON-RPC. | JSON-schema tool definitions |
 | **Part 9** | **Coordinator Agent** | End-to-end state machine manager owning the entire request lifecycle (`RECEIVED` ➔ `VALIDATED` ➔ `MATCHED` ➔ `LOCATED` ➔ `COMPLETED`/`FAILED`). | Finite State Machine, DB Persistence |
 | **Part 10** | **Optimization Engine** | Combinatorial multi-source solver allocating required units across multiple blood banks and individual donors under medical safety constraints. | Greedy Combinatorial Optimization |
-| **Part 11** | **Real Road Routing & ETA** | Live OpenStreetMap / OSRM road routing integration delivering accurate turn-by-turn driving distance and traffic-aware transit durations with automatic Haversine fallback. | OSRM Driving Engine API, HTTPX |
+| **Part 11** | **Real Road Routing & ETA** | Live OpenStreetMap / OSRM road routing integration delivering road driving distance and duration (no live traffic) with automatic Haversine fallback. | OSRM Driving Engine API, urllib |
 | **Part 12** | **Notification Agent** | Multichannel alerting engine alerting hospital staff, reserving blood bank inventories, and summoning voluntary donors. | Console, SMTP Email, Twilio SMS Stubs |
 | **Part 13** | **Command Center Web UI** | Real-time Single Page Application (SPA) dashboard with live 5s polling, interactive clinical dispatch, and visual agent pipeline cards. | Modern Vanilla HTML5/CSS3/ES6 |
-| **Part 14** | **LLM Natural Language Parser** | Natural language clinical intake extracting blood group, unit counts, and urgency from free-text notes and forwarding to the coordinator. | Clinical RegEx & LLM Provider API |
-| **Part 15** | **Auth & Tamper-Evident Audit** | JWT token authentication, Passlib bcrypt hashing, Role-Based Access Control (`HOSPITAL_STAFF`, `BLOOD_BANK_STAFF`, `ADMIN`), and immutable audit logging. | JWT, Bcrypt, Middleware Audit Trails |
-| **Part 16** | **Docker, CI/CD & Metrics** | Multi-stage containerization (`Dockerfile`, `docker-compose.yml`), GitHub Actions test matrix, and Prometheus operational `/metrics`. | Docker, Compose, GitHub Actions, Prometheus |
+| **Part 14** | **LLM Natural Language Parser** | Natural language clinical intake extracting blood group, unit counts, and urgency from free-text notes and forwarding to the coordinator. | Built-in regex parser (LLM provider hook not implemented yet) |
+| **Part 15** | **Auth & Audit Log** | JWT token authentication, bcrypt hashing, Role-Based Access Control (`HOSPITAL_STAFF`, `BLOOD_BANK_STAFF`, `ADMIN`) enforced on every API route, and audit logging. | JWT, Bcrypt, Audit log table |
+| **Part 16** | **Docker, CI/CD & Metrics** | Multi-stage containerization (`Dockerfile`, `docker-compose.yml`), GitHub Actions test matrix, and a JSON `/metrics` snapshot. | Docker, Compose, GitHub Actions |
 
 ---
 
@@ -249,7 +249,7 @@ The system includes a dedicated, responsive **Emergency Command Center Single Pa
 ```
 
 ### Dashboard Capabilities
-- **Real-Time 5s Polling**: Automatically refreshes active requests and metrics without page reload.
+- **Real-Time 5s Polling**: Automatically refreshes the active request list without page reload.
 - **Pipeline Agent Cards**: Visual inspection of all 5 autonomous agents and their operational status.
 - **One-Click Coordination Trigger**: Dispatches requests through the full pipeline directly from the UI.
 - **Real-Time Natural Language Dispatch**: Clinical staff can type free-form triage notes directly into the system.
@@ -262,19 +262,28 @@ The system includes a dedicated, responsive **Emergency Command Center Single Pa
 
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Application health and database connectivity probe. | No |
-| `GET` | `/metrics` | Prometheus metrics: request latency, coordination counts, agent execution times. | No |
+| `GET` | `/health` | Application health probe. | No |
+| `GET` | `/metrics` | JSON metrics snapshot (request counts and latency); not Prometheus text format. | `ADMIN` |
 | `GET` | `/dashboard` | Redirects to the Command Center UI at `/frontend/`. | No |
-| `POST` | `/api/v1/auth/register` | Register hospital or blood bank staff member. | No |
+| `POST` | `/api/v1/auth/register` | Public self-registration. Always creates a `HOSPITAL_STAFF` account; other roles are rejected with 403. | No |
 | `POST` | `/api/v1/auth/login` | Authenticate user and receive JWT Bearer token. | No |
-| `GET` | `/api/v1/auth/me` | Retrieve profile of the authenticated user. | Yes (Bearer) |
-| `GET` | `/api/v1/auth/audit-logs` | Retrieve tamper-evident operational and security audit records. | Yes (`ADMIN`) |
-| `POST` | `/api/v1/blood-requests` | Create structured emergency blood request. | Optional |
-| `GET` | `/api/v1/blood-requests` | List all existing blood requests with filtering. | Optional |
-| `POST` | `/api/v1/blood-requests/{id}/coordinate` | **Execute Coordinator Agent pipeline** & return optimized fulfillment plan. | Optional |
-| `POST` | `/api/v1/nl-request` | **Natural Language Clinical Intake**: parses raw emergency text notes. | Optional |
-| `GET` | `/api/v1/mcp/tools` | List registered MCP tools and JSON Schemas. | No |
-| `POST` | `/api/v1/mcp/invoke` | Execute an MCP tool via standardized JSON-RPC envelope. | No |
+| `POST` | `/api/v1/auth/users` | Create a user with any role. | `ADMIN` |
+| `GET` | `/api/v1/auth/me` | Retrieve profile of the authenticated user. | Any logged-in user |
+| `GET` | `/api/v1/auth/audit-logs` | Retrieve operational and security audit records. | `ADMIN` |
+| `GET` | `/api/v1/hospitals` | List hospitals. | Any logged-in user |
+| `GET` | `/api/v1/blood-requests` | List blood requests. | Any logged-in user |
+| `GET` | `/api/v1/blood-requests/{id}` | Get one request. | Any logged-in user |
+| `GET` | `/api/v1/blood-requests/{id}/matches` | Candidate sources for a request. | Any logged-in user |
+| `POST` | `/api/v1/blood-requests` | Create structured emergency blood request. | `HOSPITAL_STAFF`, `ADMIN` |
+| `PATCH` | `/api/v1/blood-requests/{id}/status` | Update request status. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/blood-requests/{id}/coordinate` | **Execute Coordinator Agent pipeline** & return optimized fulfillment plan. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/blood-requests/{id}/orchestrate` | Orchestrate allocation and persist matches. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/nl-request` | **Natural Language Clinical Intake**: parses raw emergency text notes. | `HOSPITAL_STAFF`, `ADMIN` |
+| `GET` | `/api/v1/mcp/tools` | List registered MCP tools and JSON Schemas. | Any logged-in user |
+| `GET` | `/api/v1/mcp/tools/{name}` | Describe one MCP tool. | Any logged-in user |
+| `POST` | `/api/v1/mcp/tools/{name}/invoke` | Execute an MCP tool by name (REST, not JSON-RPC). | Any logged-in user |
+
+The web UI signs in through `/api/v1/auth/login` and sends the token for you. API clients send `Authorization: Bearer <token>`. A missing or invalid token returns 401; a valid token with the wrong role returns 403.
 
 ---
 
@@ -369,7 +378,7 @@ The stack launches:
 - **Backend API Server**: `http://localhost:8000` (FastAPI with Uvicorn)
 - **Interactive Swagger Docs**: `http://localhost:8000/docs`
 - **Command Center Dashboard**: `http://localhost:8000/frontend/` or `http://localhost:3000`
-- **Prometheus Metrics**: `http://localhost:8000/metrics`
+- **Metrics (JSON, ADMIN token required)**: `http://localhost:8000/metrics`
 
 To stop the services:
 ```bash
@@ -401,59 +410,79 @@ source venv/bin/activate
 
 ### 2. Install Dependencies
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime + test dependencies
 ```
 
-### 3. Initialize & Seed Database
+### 3. Configure Environment (required)
+Copy the template and set a JWT secret. The app refuses to start without one.
+```bash
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # paste the output as JWT_SECRET_KEY in .env
+```
+| Variable | Required | Meaning |
+| :--- | :--- | :--- |
+| `JWT_SECRET_KEY` | Yes | At least 32 characters. Never commit `.env`; use a different value per environment. |
+| `CORS_ORIGINS` | No | Comma-separated allowed browser origins. `*` is rejected. |
+| `DATABASE_URL` | No | Defaults to local SQLite. |
+
+### 4. Create the First Administrator
+Public registration only creates `HOSPITAL_STAFF`. Create an admin from the command line (the password is prompted, never passed as an argument):
+```bash
+python -m scripts.create_admin --email admin@example.com
+```
+Admins can then create `BLOOD_BANK_STAFF` or more admin accounts with `POST /api/v1/auth/users`.
+
+### 5. Initialize & Seed Database
 ```bash
 python -m scripts.run_demo
 ```
 *Seeds synthetic hospitals, blood banks, inventory batches, and voluntary donors.*
 
-### 4. Run Development Server
+### 6. Run Development Server
 ```bash
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ---
 
-## 🧪 Test Suite & Quality Assurance (120 Tests)
+## 🧪 Test Suite & Quality Assurance (189 Tests)
 
-The system features a rigorous automated test suite containing **120 tests across 18 test modules** covering unit, integration, edge-case, and security verification.
+The automated suite has **189 tests across 19 modules** covering unit, integration and access-control checks. It uses synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated.
 
 ### Run Full Test Suite
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
 ### Run Tests with Coverage Analysis
 ```bash
-pytest -v --cov=app --cov-report=term-missing
+python -m pytest -v --cov=app --cov-report=term-missing
 ```
 
 ### Test Suite Verification Matrix
 
-| Test Module | Coverage Domain | Tests | Status |
-| :--- | :--- | :---: | :---: |
-| `tests/test_main.py` | Health endpoints, app factory, root routing | 2 | ✅ PASS |
-| `tests/test_models.py` | Database relational schemas, foreign keys, constraints | 8 | ✅ PASS |
-| `tests/test_seed.py` | Synthetic database seeding & data integrity | 4 | ✅ PASS |
-| `tests/test_api_blood_requests.py` | Request CRUD, validation schemas, status flow | 8 | ✅ PASS |
-| `tests/test_requirement_agent.py` | Clinical input triage, blood group verification, urgency | 6 | ✅ PASS |
-| `tests/test_matching_agent.py` | RBC compatibility engine, cross-matching rules | 7 | ✅ PASS |
-| `tests/test_location_agent.py` | Geospatial calculations, coordinates, speed profiles | 6 | ✅ PASS |
-| `tests/test_a2a_communication.py` | A2A message bus, pub/sub envelopes, decoupled bus | 7 | ✅ PASS |
-| `tests/test_mcp_server.py` | MCP tool registration, JSON schema compliance, invocation | 8 | ✅ PASS |
-| `tests/test_coordinator_agent.py` | Finite state machine, end-to-end pipeline lifecycle | 7 | ✅ PASS |
-| `tests/test_optimization_service.py` | Combinatorial knapsack, donor safety cap, urgency weighting | 8 | ✅ PASS |
-| `tests/test_routing_provider.py` | OSRM routing API, network failures, Haversine fallback | 7 | ✅ PASS |
-| `tests/test_notification_agent.py` | Hospital, blood bank, donor alerts across console, email, SMS | 7 | ✅ PASS |
-| `tests/test_frontend_dashboard.py` | SPA endpoints, frontend serving, dashboard redirect | 5 | ✅ PASS |
-| `tests/test_api_matching_and_frontend.py`| UI-to-coordinator integration & live API contract | 7 | ✅ PASS |
-| `tests/test_llm_nl_interface.py` | Natural language clinical entity extraction & dispatcher | 7 | ✅ PASS |
-| `tests/test_auth_and_audit.py` | JWT authentication, RBAC, password security, audit logs | 9 | ✅ PASS |
-| `tests/test_observability.py` | Prometheus metrics, latency tracking, health diagnostics | 7 | ✅ PASS |
-| **TOTAL** | **Comprehensive Full System Verification** | **120** | **✅ 100% PASS** |
+| Test Module | Coverage Domain | Tests |
+| :--- | :--- | :---: |
+| `tests/agents/test_a2a_communication.py` | A2A message bus and typed envelopes | 11 |
+| `tests/agents/test_coordinator_agent.py` | Coordinator state machine and end-to-end pipeline | 12 |
+| `tests/agents/test_location_agent.py` | Distance calculation and swappable routing providers | 13 |
+| `tests/agents/test_matching_agent.py` | RBC compatibility and candidate ranking | 11 |
+| `tests/agents/test_nl_interface.py` | Free-text parsing into structured requests | 4 |
+| `tests/agents/test_notification_agent.py` | Notification messages and console provider | 5 |
+| `tests/agents/test_requirement_agent.py` | Request validation (blood group, units, urgency) | 7 |
+| `tests/api/test_api_blood_requests.py` | Blood request create / list / update endpoints | 8 |
+| `tests/api/test_api_matching_and_frontend.py` | Matching pipeline and frontend endpoints | 3 |
+| `tests/api/test_auth_and_audit.py` | Login, tokens and audit log | 6 |
+| `tests/api/test_frontend_dashboard.py` | Frontend serving, login screen and token handling | 4 |
+| `tests/api/test_security.py` | Auth on every route, role matrix, registration rules, JWT secret and CORS config | 67 |
+| `tests/db/test_models.py` | ORM models, relationships, constraints | 9 |
+| `tests/db/test_seed.py` | Synthetic data seeding | 2 |
+| `tests/mcp/test_mcp_server.py` | MCP tool listing, schemas and invocation | 10 |
+| `tests/services/test_optimization_service.py` | Multi-source allocation | 6 |
+| `tests/services/test_routing_provider.py` | Haversine / OSRM providers and fallback | 5 |
+| `tests/test_main.py` | App startup and health endpoint | 3 |
+| `tests/test_observability.py` | Metrics snapshot and /metrics (ADMIN) | 3 |
+| **TOTAL** | | **189** |
 
 ---
 
@@ -462,8 +491,12 @@ pytest -v --cov=app --cov-report=term-missing
 ```
 ├── Dockerfile                           # Multi-stage Docker build for backend
 ├── docker-compose.yml                   # Container orchestration stack
-├── requirements.txt                     # Production & testing dependencies
-├── scripts/                             # Utility scripts (run_demo.py)
+├── requirements.txt                     # Runtime dependencies only
+├── requirements-dev.txt                 # Runtime + pytest, pytest-cov, httpx
+├── pyproject.toml                       # pytest configuration
+├── scripts/                             # Utility scripts
+│   ├── run_demo.py                      # Seeds synthetic data and runs the demo
+│   └── create_admin.py                  # Creates the first ADMIN account (prompts for password)
 ├── README.md                            # Comprehensive system documentation
 ├── .env.example                         # Environment variable template
 ├── .dockerignore                        # Docker build ignore rules
@@ -482,7 +515,7 @@ pytest -v --cov=app --cov-report=term-missing
 │   │   ├── notification_agent.py        # Multichannel alert & dispatch agent
 │   │   ├── nl_interface.py              # Natural language clinical intake agent
 │   │   └── a2a/                         # Agent-to-Agent communication layer
-│   │       ├── bus.py                   # In-process asynchronous Pub/Sub message broker
+│   │       ├── bus.py                   # In-process synchronous message bus
 │   │       ├── message.py               # Typed A2A message envelope
 │   │       └── orchestration.py         # A2A sequence coordinator
 │   ├── api/                             # RESTful API Endpoints
@@ -516,7 +549,7 @@ pytest -v --cov=app --cov-report=term-missing
 │   │   ├── match.py                     # Coordination matches & allocations
 │   │   └── user.py                      # User accounts & roles
 │   ├── observability/
-│   │   └── metrics.py                   # Prometheus metrics collector
+│   │   └── metrics.py                   # In-memory metrics collector
 │   ├── schemas/                         # Pydantic Request/Response Models
 │   │   ├── auth.py                      # User registration, login & token schemas
 │   │   ├── blood_bank.py
@@ -527,6 +560,7 @@ pytest -v --cov=app --cov-report=term-missing
 │   │   └── match.py
 │   ├── services/                        # Specialized Business Engines
 │   │   ├── audit.py                     # Security audit logger service
+│   │   ├── user_service.py              # Shared user-creation logic (register, admin, CLI)
 │   │   ├── compatibility.py             # ABO/Rh-D immunological matrix
 │   │   ├── optimization_service.py      # Greedy multi-source knapsack solver
 │   │   ├── routing_provider.py          # OSRM road routing + Haversine fallback
@@ -544,7 +578,7 @@ pytest -v --cov=app --cov-report=term-missing
 │       ├── index.html                   # Command Center interface
 │       ├── styles.css                   # Responsive dark-theme clinical styling
 │       └── app.js                       # Live polling & interactive dispatch logic
-└── tests/                               # Comprehensive Automated Test Suite (120 Tests)
+└── tests/                               # Comprehensive Automated Test Suite (189 Tests)
     ├── conftest.py                      # Shared test fixtures (db_session, client)
     ├── test_main.py
     ├── test_observability.py
@@ -559,4 +593,6 @@ pytest -v --cov=app --cov-report=term-missing
 
 ## 📜 License & Compliance
 
-Distributed under the **MIT License**. Built in accordance with healthcare clinical trial protocols and medical informatics standards.
+Distributed under the **MIT License**.
+
+> **Disclaimer:** This is a demo/prototype that uses synthetic data only. It has not been clinically validated and must not be used to make real transfusion or blood-allocation decisions.

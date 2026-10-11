@@ -11,6 +11,8 @@ from app.database.session import Base, get_db
 from app.models.hospital import Hospital
 from app.models.blood_bank import BloodBank
 from app.models.blood_inventory import BloodInventory
+from app.models.user import UserRole
+from tests.conftest import make_user, auth_headers
 
 
 @pytest.fixture
@@ -30,6 +32,8 @@ def client():
         inv = BloodInventory(inventory_id=1, bank_id=1, blood_group="A+", units_available=5)
         seed_session.add_all([h, b, inv])
         seed_session.commit()
+        staff = make_user(seed_session, "frontend-staff@example.com", UserRole.HOSPITAL_STAFF)
+        staff_headers = auth_headers(staff)
 
     def override_get_db():
         db = TestingSession()
@@ -39,7 +43,9 @@ def client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    test_client = TestClient(app)
+    test_client.headers.update(staff_headers)
+    yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=test_engine)
 
@@ -60,8 +66,7 @@ def test_dashboard_route_serves_html(client):
 
 
 def test_frontend_create_request_api_flow(client):
-    """Verify create-request API flow used by frontend form."""
-    client = TestClient(app)
+    """Verify create-request API flow used by frontend form (authenticated as HOSPITAL_STAFF)."""
     payload = {
         "hospital_id": 1,
         "blood_group": "A+",
@@ -87,3 +92,21 @@ def test_frontend_create_request_api_flow(client):
     coord_data = coord_resp.json()
     assert coord_data["success"] is True
     assert "fulfillment_plan" in coord_data
+
+
+def test_frontend_serves_login_screen_with_relative_assets(client):
+    """The UI must expose a login form and load assets by relative path (works under nginx too)."""
+    resp = client.get("/frontend/")
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'id="auth-form"' in html
+    assert 'href="styles.css"' in html and 'src="app.js"' in html
+    assert "/frontend/styles.css" not in html
+
+
+def test_frontend_script_sends_bearer_token_and_escapes_output(client):
+    """app.js must attach the bearer token to API calls and escape server-provided text."""
+    js = client.get("/frontend/app.js").text
+    assert "Authorization" in js and "Bearer" in js
+    assert "escapeHtml" in js
+    assert "onclick=" not in js

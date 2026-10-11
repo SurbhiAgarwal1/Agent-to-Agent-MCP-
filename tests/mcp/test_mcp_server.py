@@ -20,6 +20,8 @@ from app.mcp.server import (
     default_mcp_server,
 )
 from app.main import app
+from app.models.user import UserRole
+from tests.conftest import make_user, auth_headers
 
 # In-memory SQLite with StaticPool for test isolation
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -234,7 +236,9 @@ def test_mcp_http_endpoints(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    user = make_user(db_session, "mcp-user@example.com", UserRole.BLOOD_BANK_STAFF)
     client = TestClient(app)
+    client.headers.update(auth_headers(user))
 
     # 1. GET /api/v1/mcp/tools
     res_list = client.get("/api/v1/mcp/tools")

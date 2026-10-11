@@ -4,6 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.observability.metrics import get_metrics_snapshot, increment_metric
+from app.models.user import UserRole
+from tests.conftest import make_user, auth_headers
 
 
 def test_metrics_snapshot_structure():
@@ -25,9 +27,10 @@ def test_metrics_increment_metric():
     assert updated == initial + 1
 
 
-def test_metrics_api_endpoint():
-    """Verify GET /metrics HTTP endpoint returns status 200 and live metrics."""
-    client = TestClient(app)
+def test_metrics_api_endpoint(client, db_session):
+    """Verify GET /metrics HTTP endpoint returns status 200 and live metrics (ADMIN only)."""
+    admin = make_user(db_session, "metrics-admin@example.com", UserRole.ADMIN)
+    client.headers.update(auth_headers(admin))
     # Perform a request first to ensure counter increments
     client.get("/health")
 
