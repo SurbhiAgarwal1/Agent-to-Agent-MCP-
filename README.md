@@ -1,4 +1,4 @@
-# 🩸 Blood Donation Matching & Emergency Coordination System
+#  Blood Donation Matching & Emergency Coordination System
 ### *Autonomous Multi-Agent Emergency Medical Logistics Platform (A2A Protocol & MCP Tools)*
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
