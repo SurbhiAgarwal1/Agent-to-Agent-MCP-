@@ -1,118 +1,17 @@
 """Location Agent for Blood Donation Matching System.
 
 Responsible for calculating geographic straight-line distances and approximate
-transit times between hospitals, blood banks, and donors using the Haversine formula.
+transit times between hospitals, blood banks, and donors using a pluggable routing provider.
 
 Architecture & Future Extensibility:
-- Implements an abstract routing interface (`BaseRoutingService`).
-- Defaults to `HaversineRoutingService` for local, zero-external-dependency calculations.
-- Later phases can seamlessly inject real routing engines (e.g., OSRM, Google Maps,
-  OpenRouteService) without modifying the Location Agent's callers or downstream agents.
+- All routing logic lives in `app.services.routing_provider` (single source of truth).
+- Defaults to the provider selected by `get_routing_provider()` (Haversine unless
+  ROUTING_PROVIDER=real/osrm is configured).
+- Inject any `RoutingProvider` (OSRM, OpenRouteService, ...) via `routing_provider=`
+  without modifying the Location Agent's callers or downstream agents.
 """
 
-from abc import ABC, abstractmethod
-import math
 from typing import Any, Dict, Optional, Union
-
-
-# -----------------------------------------------------------------------------
-# Routing Service Interface & Implementations
-# -----------------------------------------------------------------------------
-
-class BaseRoutingService(ABC):
-    """Abstract interface for routing and distance calculation services.
-    
-    Subclasses can implement straight-line algorithms (Haversine) or live
-    road network APIs (OSRM, Google Maps, OpenRouteService).
-    """
-
-    @abstractmethod
-    def calculate_distance(
-        self,
-        origin_lat: float,
-        origin_lon: float,
-        dest_lat: float,
-        dest_lon: float,
-    ) -> float:
-        """Calculate the distance in kilometers between two geographic coordinates."""
-        pass
-
-    @abstractmethod
-    def estimate_travel_time(self, distance_km: float) -> str:
-        """Estimate the travel duration based on distance."""
-        pass
-
-
-class HaversineRoutingService(BaseRoutingService):
-    """Straight-line distance calculation using the Haversine formula.
-    
-    Computes great-circle distances across the surface of a spherical Earth
-    using latitude and longitude coordinates.
-    
-    NOTE:
-    This computes theoretical straight-line ('as-the-crow-flies') distance.
-    It does not account for road topologies, one-way streets, rivers/barriers,
-    or real-time traffic conditions. Travel time is explicitly labeled as an
-    approximation.
-    """
-
-    EARTH_RADIUS_KM: float = 6371.0  # Mean volumetric radius of the Earth
-    DEFAULT_URBAN_SPEED_KMH: float = 30.0  # Baseline city speed for emergency transit approximation
-
-    def calculate_distance(
-        self,
-        origin_lat: float,
-        origin_lon: float,
-        dest_lat: float,
-        dest_lon: float,
-    ) -> float:
-        """Calculate great-circle distance in kilometers using the Haversine formula.
-        
-        Args:
-            origin_lat: Origin latitude in degrees [-90.0, 90.0]
-            origin_lon: Origin longitude in degrees [-180.0, 180.0]
-            dest_lat: Destination latitude in degrees [-90.0, 90.0]
-            dest_lon: Destination longitude in degrees [-180.0, 180.0]
-            
-        Returns:
-            Distance in kilometers as a float.
-        """
-        # Convert degree coordinates to radians
-        phi1 = math.radians(origin_lat)
-        phi2 = math.radians(dest_lat)
-        delta_phi = math.radians(dest_lat - origin_lat)
-        delta_lambda = math.radians(dest_lon - origin_lon)
-
-        # Haversine formula:
-        # a = sin²(Δφ/2) + cos(φ1) * cos(φ2) * sin²(Δλ/2)
-        # c = 2 * atan2(√a, √(1-a))
-        # d = R * c
-        a = (
-            math.sin(delta_phi / 2.0) ** 2
-            + math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2)
-        )
-
-        # Numerical clamping to protect against float precision exceeding [0.0, 1.0]
-        a = min(1.0, max(0.0, a))
-        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-
-        return self.EARTH_RADIUS_KM * c
-
-    def estimate_travel_time(self, distance_km: float) -> str:
-        """Estimate transit time based on assumed urban velocity.
-        
-        Args:
-            distance_km: Straight-line distance in kilometers
-            
-        Returns:
-            Human-readable transit duration string explicitly labeled as approximate.
-        """
-        if distance_km <= 0.0:
-            return "0 mins (approx straight-line)"
-
-        time_hours = distance_km / self.DEFAULT_URBAN_SPEED_KMH
-        time_minutes = max(1, round(time_hours * 60))
-        return f"~{time_minutes} mins (approx straight-line)"
 
 
 # -----------------------------------------------------------------------------
@@ -128,25 +27,20 @@ class LocationAgent:
 
     def __init__(
         self,
-        routing_service: Optional[BaseRoutingService] = None,
         routing_provider: Optional[Any] = None,
         bus: Optional[Any] = None,
     ):
         """Initialize the Location Agent.
-        
+
         Args:
-            routing_service: Optional legacy routing engine conforming to BaseRoutingService.
-            routing_provider: Optional RoutingProvider conforming to Part 11 RoutingProvider interface.
+            routing_provider: Optional RoutingProvider (see app.services.routing_provider).
+                Defaults to get_routing_provider().
             bus: Optional MessageBus instance for A2A communication.
         """
-        self.routing_service = routing_service
-        if routing_provider is not None:
-            self.routing_provider = routing_provider
-        elif routing_service is not None:
-            self.routing_provider = None
-        else:
+        if routing_provider is None:
             from app.services.routing_provider import get_routing_provider
-            self.routing_provider = get_routing_provider()
+            routing_provider = get_routing_provider()
+        self.routing_provider = routing_provider
         self.bus = bus
 
     def handle_a2a_message(self, message: Any) -> Any:
@@ -296,21 +190,7 @@ class LocationAgent:
         self.validate_coordinates(origin_lat, origin_lon, label="Origin")
         self.validate_coordinates(dest_lat, dest_lon, label="Destination")
 
-        # 2. Check legacy routing_service
-        if self.routing_service is not None:
-            raw_distance = self.routing_service.calculate_distance(
-                origin_lat=origin_lat,
-                origin_lon=origin_lon,
-                dest_lat=dest_lat,
-                dest_lon=dest_lon,
-            )
-            distance_km = round(raw_distance, 2)
-            result: Dict[str, Any] = {"distance_km": distance_km}
-            if include_eta:
-                result["estimated_time"] = self.routing_service.estimate_travel_time(raw_distance)
-            return result
-
-        # 3. Route via RoutingProvider (Part 11)
+        # 2. Route via RoutingProvider
         route_info = self.routing_provider.route(
             origin_lat=origin_lat,
             origin_lon=origin_lon,
@@ -331,9 +211,7 @@ class LocationAgent:
         """Compute full route with ETA and provider source metadata (Part 11)."""
         self.validate_coordinates(origin_lat, origin_lon, label="Origin")
         self.validate_coordinates(dest_lat, dest_lon, label="Destination")
-        if self.routing_provider is not None:
-            return self.routing_provider.route(origin_lat, origin_lon, dest_lat, dest_lon)
-        return self.calculate_distance(origin_lat, origin_lon, dest_lat, dest_lon, include_eta=True)
+        return self.routing_provider.route(origin_lat, origin_lon, dest_lat, dest_lon)
 
     def process(
         self,

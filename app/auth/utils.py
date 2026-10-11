@@ -1,12 +1,11 @@
 """Authentication utilities for hashing and JWT token management (Part 15)."""
 
 from datetime import datetime, timedelta, timezone
-import os
 from typing import Any, Dict, Optional
 import bcrypt
 import jwt
+from app.config import get_settings
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "emergency-blood-secret-key-3c9f28a1")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
@@ -37,13 +36,15 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret_key = get_settings().jwt_secret_key
+    return jwt.encode(to_encode, secret_key, algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and validate signed JWT bearer token claims."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        secret_key = get_settings().jwt_secret_key
+        payload = jwt.decode(token, secret_key, algorithms=[ALGORITHM])
         return payload
     except Exception:
         return None

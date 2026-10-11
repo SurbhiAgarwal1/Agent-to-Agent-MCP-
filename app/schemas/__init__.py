@@ -14,6 +14,7 @@ from app.schemas.blood_request import (
     BloodRequestResponse,
 )
 from app.schemas.match import MatchBase, MatchCreate, MatchResponse
+from app.schemas.auth import UserRegister, UserCreate, UserLogin, Token, UserResponse
 
 __all__ = [
     "HospitalBase",
@@ -34,4 +35,9 @@ __all__ = [
     "MatchBase",
     "MatchCreate",
     "MatchResponse",
+    "UserRegister",
+    "UserCreate",
+    "UserLogin",
+    "Token",
+    "UserResponse",
 ]

@@ -4,10 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 
-from app.database.session import get_db
 from app.mcp.tools.requirement_tool import (
     TOOL_NAME as VALIDATE_TOOL_NAME,
     TOOL_DESCRIPTION as VALIDATE_TOOL_DESC,
@@ -154,52 +151,4 @@ def create_default_mcp_server() -> MCPServer:
     return server
 
 
-# -----------------------------------------------------------------------------
-# Local HTTP Transport: FastAPI Router for MCP
-# -----------------------------------------------------------------------------
-
 default_mcp_server = create_default_mcp_server()
-mcp_router = APIRouter(prefix="/mcp", tags=["MCP Tools"])
-
-
-class ToolInvocationPayload(BaseModel):
-    """Payload format for tool invocation."""
-    arguments: Dict[str, Any]
-
-
-@mcp_router.get("/tools", summary="List MCP tools")
-def list_mcp_tools():
-    """List all registered MCP tools and their JSON schemas."""
-    return {
-        "server": default_mcp_server.server_name,
-        "version": default_mcp_server.version,
-        "tools": default_mcp_server.list_tools(),
-    }
-
-
-@mcp_router.get("/tools/{tool_name}", summary="Describe an MCP tool")
-def describe_mcp_tool(tool_name: str):
-    """Retrieve JSON schema details for a specific MCP tool."""
-    tool_meta = default_mcp_server.describe_tool(tool_name)
-    if not tool_meta:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"MCP tool '{tool_name}' not found.",
-        )
-    return tool_meta
-
-
-@mcp_router.post("/tools/{tool_name}/invoke", summary="Invoke an MCP tool")
-def invoke_mcp_tool(
-    tool_name: str,
-    payload: ToolInvocationPayload,
-    db: Session = Depends(get_db),
-):
-    """Execute an MCP tool via HTTP transport."""
-    result = default_mcp_server.invoke_tool(tool_name, payload.arguments, db=db)
-    if result.get("isError"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Tool execution failed."),
-        )
-    return result

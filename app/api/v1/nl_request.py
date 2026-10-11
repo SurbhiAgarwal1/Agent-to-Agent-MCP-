@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.llm.nl_interface import NLInterfaceAgent
+from app.agents.nl_interface import NLInterfaceAgent
+from app.models.user import User, UserRole
+from app.auth.dependencies import require_role
 
 router = APIRouter()
 
@@ -21,6 +23,7 @@ class NLRequestInput(BaseModel):
 def process_natural_language_request(
     payload: NLRequestInput,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Parse natural language blood request, validate, coordinate, and summarize."""
     agent = NLInterfaceAgent(db=db)

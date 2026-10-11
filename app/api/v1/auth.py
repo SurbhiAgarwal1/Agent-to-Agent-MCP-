@@ -5,41 +5,67 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
-from app.auth.models import User, UserRole, AuditLog
-from app.auth.schemas import UserRegister, UserLogin, Token, UserResponse
-from app.auth.utils import hash_password, verify_password, create_access_token
+from app.models import User, UserRole, AuditLog
+from app.schemas.auth import UserRegister, UserCreate, UserLogin, Token, UserResponse
+from app.auth.utils import verify_password, create_access_token
 from app.auth.dependencies import get_current_user, require_role
+from app.services.user_service import create_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)):
-    """Register a new user account with role."""
-    existing_user = db.query(User).filter(User.email == payload.email).first()
-    if existing_user:
+    """Register a new user account with role (public self-service registration)."""
+    requested_role = (payload.role or UserRole.HOSPITAL_STAFF).strip().upper()
+    if requested_role != UserRole.HOSPITAL_STAFF:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email already exists.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration can only create HOSPITAL_STAFF accounts. Contact an administrator for other roles.",
         )
 
-    role = payload.role.strip().upper()
-    if role not in UserRole.ALL_ROLES:
+    try:
+        user = create_user(
+            db=db,
+            email=payload.email,
+            password=payload.password,
+            role=UserRole.HOSPITAL_STAFF,
+        )
+        return user
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role '{payload.role}'. Must be one of: {UserRole.ALL_ROLES}",
+            detail=str(exc),
         )
 
-    hashed_pw = hash_password(payload.password)
-    user = User(
-        email=payload.email,
-        hashed_password=hashed_pw,
-        role=role,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user_by_admin(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Admin-only endpoint to create users with any authorization role."""
+    try:
+        user = create_user(
+            db=db,
+            email=payload.email,
+            password=payload.password,
+            role=payload.role,
+        )
+        return user
+    except ValueError as exc:
+        # Check if error is due to invalid role or duplicate email
+        err_msg = str(exc)
+        if "Invalid role" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=err_msg,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_msg,
+        )
 
 
 @router.post("/login", response_model=Token)
@@ -72,9 +98,9 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
 def list_audit_logs(
     limit: int = 50,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
-    """Retrieve recent security audit log entries (authenticated)."""
+    """Retrieve recent security audit log entries (ADMIN only)."""
     logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
     return [
         {

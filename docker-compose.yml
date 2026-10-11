@@ -13,7 +13,8 @@ services:
       - DATABASE_URL=sqlite:///./data/blood_donation.db
       - ROUTING_PROVIDER=haversine
       - LLM_PROVIDER=builtin
-      - JWT_SECRET_KEY=production-emergency-blood-key-928f01a3
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
     volumes:
       - blood_data:/app/data
     healthcheck:

@@ -13,12 +13,9 @@ The **Emergency Command Center UI** is a lightweight Single Page Application (SP
 ### Option 1: Built-in with FastAPI (Zero Setup)
 The backend serves the frontend directly at:
 ```
-http://localhost:8000/dashboard
+http://localhost:8000/frontend/
 ```
-or
-```
-http://localhost:8000/ui
-```
+(`/dashboard` and `/ui` redirect here.)
 
 ### Option 2: Standalone Vite Dev Server
 ```bash

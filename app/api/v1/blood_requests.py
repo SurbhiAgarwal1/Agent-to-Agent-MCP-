@@ -11,6 +11,7 @@ from app.models.blood_bank import BloodBank
 from app.models.donor import Donor
 from app.models.blood_request import BloodRequest
 from app.models.enums import RequestStatus
+from app.models.user import User, UserRole
 from app.schemas.blood_request import (
     BloodRequestCreate,
     BloodRequestStatusUpdate,
@@ -20,6 +21,7 @@ from app.agents.requirement_agent import RequirementAgent
 from app.agents.matching_agent import MatchingAgent
 from app.agents.location_agent import LocationAgent
 from app.agents.coordinator_agent import CoordinatorAgent
+from app.auth.dependencies import get_current_user, require_role
 
 router = APIRouter()
 
@@ -43,6 +45,7 @@ router = APIRouter()
 def create_blood_request(
     payload: BloodRequestCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Create a new blood request for a verified hospital."""
     # 1. Verify that the hospital exists in the database
@@ -67,13 +70,13 @@ def create_blood_request(
     db.refresh(new_request)
 
     # Record security & operations audit log (Part 15)
-    from app.middleware.audit_log import record_audit_log
+    from app.services.audit import record_audit_log
     record_audit_log(
         db=db,
         action="CREATE_REQUEST",
         resource="blood_request",
         resource_id=new_request.request_id,
-        user_id=getattr(current_user, "id", None) if "current_user" in locals() else None,
+        user_id=current_user.id,
         details={
             "hospital_id": payload.hospital_id,
             "blood_group": payload.blood_group.value,
@@ -92,6 +95,7 @@ def create_blood_request(
 )
 def list_blood_requests(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve all blood requests."""
     return db.query(BloodRequest).order_by(BloodRequest.created_at.desc()).all()
@@ -110,6 +114,7 @@ def list_blood_requests(
 def get_blood_request(
     request_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve an individual blood request by ID."""
     blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
@@ -140,6 +145,7 @@ def update_blood_request_status(
     request_id: int,
     status_update: BloodRequestStatusUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Update the status of an existing blood request."""
     blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
@@ -153,12 +159,13 @@ def update_blood_request_status(
     db.commit()
     db.refresh(blood_request)
 
-    from app.middleware.audit_log import record_audit_log
+    from app.services.audit import record_audit_log
     record_audit_log(
         db=db,
         action="UPDATE_STATUS",
         resource="blood_request",
         resource_id=blood_request.request_id,
+        user_id=current_user.id,
         details={"new_status": status_update.status.value},
     )
 
@@ -173,6 +180,7 @@ def update_blood_request_status(
 def get_request_matches(
     request_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Execute end-to-end multi-agent matching pipeline for a blood request."""
     blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
@@ -274,6 +282,7 @@ def get_request_matches(
 def orchestrate_blood_request(
     request_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Execute CoordinatorAgent to autonomously orchestrate, allocate, and persist blood request matches."""
     coordinator = CoordinatorAgent(db=db)
@@ -305,6 +314,7 @@ def orchestrate_blood_request(
 def coordinate_blood_request(
     request_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Execute CoordinatorAgent to process, state-track, rank, and persist candidate matches."""
     coordinator = CoordinatorAgent(db=db)
@@ -322,14 +332,14 @@ def coordinate_blood_request(
             detail=f"Coordination halted at {failed_at}: {error_msg}",
         )
 
-    from app.middleware.audit_log import record_audit_log
+    from app.services.audit import record_audit_log
     record_audit_log(
         db=db,
         action="COORDINATE",
         resource="blood_request",
         resource_id=request_id,
+        user_id=current_user.id,
         details={"status": result.get("current_state"), "candidates_count": result.get("candidates_count")},
     )
 
     return result
-

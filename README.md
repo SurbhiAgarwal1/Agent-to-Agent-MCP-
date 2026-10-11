@@ -224,7 +224,7 @@ Content-Type: application/json
 
 ## 🖥️ Emergency Command Center UI
 
-The system includes a dedicated, responsive **Emergency Command Center Single Page Application (SPA)** (`frontend/` and `/dashboard`):
+The system includes a dedicated, responsive **Emergency Command Center Single Page Application (SPA)** (`frontend/`, served at `/frontend/`; `/dashboard` and `/ui` redirect there):
 
 ```
 +-----------------------------------------------------------------------------------------+
@@ -265,7 +265,7 @@ The system includes a dedicated, responsive **Emergency Command Center Single Pa
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Application health and database connectivity probe. | No |
 | `GET` | `/metrics` | Prometheus metrics: request latency, coordination counts, agent execution times. | No |
-| `GET` | `/dashboard` | Emergency Command Center web console. | No |
+| `GET` | `/dashboard` | Redirects to the Command Center UI at `/frontend/`. | No |
 | `POST` | `/api/v1/auth/register` | Register hospital or blood bank staff member. | No |
 | `POST` | `/api/v1/auth/login` | Authenticate user and receive JWT Bearer token. | No |
 | `GET` | `/api/v1/auth/me` | Retrieve profile of the authenticated user. | Yes (Bearer) |
@@ -369,7 +369,7 @@ docker-compose up --build
 The stack launches:
 - **Backend API Server**: `http://localhost:8000` (FastAPI with Uvicorn)
 - **Interactive Swagger Docs**: `http://localhost:8000/docs`
-- **Command Center Dashboard**: `http://localhost:8000/dashboard` or `http://localhost:3000`
+- **Command Center Dashboard**: `http://localhost:8000/frontend/` or `http://localhost:3000`
 - **Prometheus Metrics**: `http://localhost:8000/metrics`
 
 To stop the services:
@@ -407,7 +407,7 @@ pip install -r requirements.txt
 
 ### 3. Initialize & Seed Database
 ```bash
-python run_demo.py
+python -m scripts.run_demo
 ```
 *Seeds synthetic hospitals, blood banks, inventory batches, and voluntary donors.*
 
@@ -449,7 +449,7 @@ pytest -v --cov=app --cov-report=term-missing
 | `tests/test_optimization_service.py` | Combinatorial knapsack, donor safety cap, urgency weighting | 8 | ✅ PASS |
 | `tests/test_routing_provider.py` | OSRM routing API, network failures, Haversine fallback | 7 | ✅ PASS |
 | `tests/test_notification_agent.py` | Hospital, blood bank, donor alerts across console, email, SMS | 7 | ✅ PASS |
-| `tests/test_frontend_dashboard.py` | SPA endpoints, static asset serving, dashboard availability | 5 | ✅ PASS |
+| `tests/test_frontend_dashboard.py` | SPA endpoints, frontend serving, dashboard redirect | 5 | ✅ PASS |
 | `tests/test_api_matching_and_frontend.py`| UI-to-coordinator integration & live API contract | 7 | ✅ PASS |
 | `tests/test_llm_nl_interface.py` | Natural language clinical entity extraction & dispatcher | 7 | ✅ PASS |
 | `tests/test_auth_and_audit.py` | JWT authentication, RBAC, password security, audit logs | 9 | ✅ PASS |
@@ -464,7 +464,7 @@ pytest -v --cov=app --cov-report=term-missing
 ├── Dockerfile                           # Multi-stage Docker build for backend
 ├── docker-compose.yml                   # Container orchestration stack
 ├── requirements.txt                     # Production & testing dependencies
-├── run_demo.py                          # Synthetic data seeder & demo runner
+├── scripts/                             # Utility scripts (run_demo.py)
 ├── README.md                            # Comprehensive system documentation
 ├── .env.example                         # Environment variable template
 ├── .dockerignore                        # Docker build ignore rules
@@ -481,6 +481,7 @@ pytest -v --cov=app --cov-report=term-missing
 │   │   ├── location_agent.py            # Road distance & ETA calculations
 │   │   ├── coordinator_agent.py         # Lifecycle manager & state machine owner
 │   │   ├── notification_agent.py        # Multichannel alert & dispatch agent
+│   │   ├── nl_interface.py              # Natural language clinical intake agent
 │   │   └── a2a/                         # Agent-to-Agent communication layer
 │   │       ├── bus.py                   # In-process asynchronous Pub/Sub message broker
 │   │       ├── message.py               # Typed A2A message envelope
@@ -490,17 +491,15 @@ pytest -v --cov=app --cov-report=term-missing
 │   │       ├── auth.py                  # User registration, login, profile, audit logs
 │   │       ├── blood_requests.py        # Blood request CRUD & coordination trigger
 │   │       ├── hospitals.py             # Hospital management
+│   │       ├── mcp.py                   # MCP tools HTTP transport router
 │   │       └── nl_request.py            # Natural language clinical intake
-│   ├── auth/                            # Security, Authentication & RBAC
+│   ├── auth/                            # Security & RBAC Utilities
 │   │   ├── dependencies.py              # JWT authentication dependencies
-│   │   ├── models.py                    # User & AuditLog SQLAlchemy models
-│   │   ├── schemas.py                   # Authentication Pydantic schemas
 │   │   └── utils.py                     # Password hashing & JWT token generators
 │   ├── database/                        # Persistence Layer
 │   │   ├── session.py                   # SQLAlchemy engine & session factory
 │   │   └── seed.py                      # Synthetic clinical data generator
-│   ├── llm/                             # Natural Language Interface
-│   │   ├── nl_interface.py              # Clinical entity parser
+│   ├── llm/                             # Prompt Templates & LLM Helpers
 │   │   └── prompt_templates.py          # Clinical prompt templates
 │   ├── mcp/                             # Model Context Protocol (MCP) Server
 │   │   ├── server.py                    # Standardized MCP server
@@ -508,23 +507,27 @@ pytest -v --cov=app --cov-report=term-missing
 │   │       ├── requirement_tool.py      # validate_blood_request
 │   │       ├── matching_tool.py         # find_blood_sources
 │   │       └── location_tool.py         # calculate_distance
-│   ├── middleware/
-│   │   └── audit_log.py                 # Request audit logging middleware
 │   ├── models/                          # Domain SQLAlchemy ORM Models
+│   │   ├── audit_log.py                 # Security & operational audit logs
 │   │   ├── blood_bank.py                # Blood bank entity
 │   │   ├── blood_inventory.py           # Blood inventory batches
 │   │   ├── blood_request.py             # Emergency blood requests
 │   │   ├── donor.py                     # Voluntary registered donors
 │   │   ├── hospital.py                  # Hospital registry
-│   │   └── match.py                     # Coordination matches & allocations
+│   │   ├── match.py                     # Coordination matches & allocations
+│   │   └── user.py                      # User accounts & roles
 │   ├── observability/
 │   │   └── metrics.py                   # Prometheus metrics collector
 │   ├── schemas/                         # Pydantic Request/Response Models
+│   │   ├── auth.py                      # User registration, login & token schemas
+│   │   ├── blood_bank.py
+│   │   ├── blood_inventory.py
 │   │   ├── blood_request.py
-│   │   ├── hospital.py
 │   │   ├── donor.py
+│   │   ├── hospital.py
 │   │   └── match.py
 │   ├── services/                        # Specialized Business Engines
+│   │   ├── audit.py                     # Security audit logger service
 │   │   ├── compatibility.py             # ABO/Rh-D immunological matrix
 │   │   ├── optimization_service.py      # Greedy multi-source knapsack solver
 │   │   ├── routing_provider.py          # OSRM road routing + Haversine fallback
@@ -532,34 +535,25 @@ pytest -v --cov=app --cov-report=term-missing
 │   │       ├── console_provider.py      # Console logger
 │   │       ├── email_provider.py        # SMTP email channel
 │   │       └── sms_provider.py          # SMS messaging channel
-│   └── static/
-│       └── dashboard.html               # Embedded Command Center HTML
+├── LICENSE                              # MIT License
+├── data/                                # SQLite volume mount point (.gitkeep)
 ├── frontend/                            # Standalone Web Application
 │   ├── Dockerfile                       # Frontend container specification
+│   ├── nginx.conf                       # Serves UI and proxies /api to the backend
 │   ├── package.json                     # Frontend metadata
 │   └── src/
 │       ├── index.html                   # Command Center interface
 │       ├── styles.css                   # Responsive dark-theme clinical styling
 │       └── app.js                       # Live polling & interactive dispatch logic
 └── tests/                               # Comprehensive Automated Test Suite (120 Tests)
-    ├── test_a2a_communication.py
-    ├── test_api_blood_requests.py
-    ├── test_api_matching_and_frontend.py
-    ├── test_auth_and_audit.py
-    ├── test_coordinator_agent.py
-    ├── test_frontend_dashboard.py
-    ├── test_llm_nl_interface.py
-    ├── test_location_agent.py
+    ├── conftest.py                      # Shared test fixtures (db_session, client)
     ├── test_main.py
-    ├── test_matching_agent.py
-    ├── test_mcp_server.py
-    ├── test_models.py
-    ├── test_notification_agent.py
     ├── test_observability.py
-    ├── test_optimization_service.py
-    ├── test_requirement_agent.py
-    ├── test_routing_provider.py
-    └── test_seed.py
+    ├── agents/                          # Agent unit and integration tests
+    ├── api/                             # API and auth endpoint tests
+    ├── db/                              # Model and database seeding tests
+    ├── mcp/                             # MCP server tool tests
+    └── services/                        # Optimization & routing service tests
 ```
 
 ---

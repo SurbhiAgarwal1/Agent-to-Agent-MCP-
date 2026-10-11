@@ -5,7 +5,6 @@ from app.mcp.server import (
     MCPTool,
     create_default_mcp_server,
     default_mcp_server,
-    mcp_router,
 )
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "MCPTool",
     "create_default_mcp_server",
     "default_mcp_server",
-    "mcp_router",
 ]
