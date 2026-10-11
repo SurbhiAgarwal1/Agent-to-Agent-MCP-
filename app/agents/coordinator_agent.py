@@ -22,6 +22,7 @@ from app.agents.matching_agent import MatchingAgent
 from app.agents.location_agent import LocationAgent
 from app.agents.a2a.bus import MessageBus
 from app.agents.a2a.message import A2AMessage, A2AMessageType
+from app.services.scarce_blood_policy import PENALTY_SCORE_POINTS, conservation_factor
 
 
 class CoordinatorState(str, Enum):
@@ -60,6 +61,8 @@ class CoordinatorAgent:
         source_type: str,
         is_exact_match: bool,
         urgency: str,
+        source_blood_group: Optional[str] = None,
+        recipient_blood_group: Optional[str] = None,
     ) -> float:
         """Calculate composite priority score (0 to 100 points)."""
         proximity_score = max(0.0, 40.0 - (distance_km * 0.8))
@@ -75,6 +78,10 @@ class CoordinatorAgent:
         else:
             urgency_score = 5.0
         total_score = proximity_score + source_score + compat_score + urgency_score
+        # Conserve scarce O- blood on routine requests
+        total_score -= PENALTY_SCORE_POINTS * conservation_factor(
+            source_blood_group, recipient_blood_group, urgency
+        )
         return round(min(100.0, max(0.0, total_score)), 2)
 
     def orchestrate(
@@ -143,7 +150,7 @@ class CoordinatorAgent:
         execution_log.append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "step": "MATCHING_AGENT",
-            "message": f"Matching Agent identified {len(raw_candidates)} compatible candidates ({len(match_result.get('compatible_groups', []))} compatible blood groups).",
+            "message": f"Matching Agent identified {len(raw_candidates)} compatible candidates (excluded as unsafe: {match_result.get('excluded', {})}).",
         })
 
         # Step 4: Location Agent - Distance, ETA & Composite Scoring
@@ -183,6 +190,8 @@ class CoordinatorAgent:
                 source_type=source_type,
                 is_exact_match=is_exact,
                 urgency=req_result["urgency"],
+                source_blood_group=source_bg,
+                recipient_blood_group=req_result["blood_group"],
             )
 
             enriched_candidates.append({
@@ -573,6 +582,7 @@ class CoordinatorAgent:
             units_required=validation_result.get("units_required", 1),
             urgency=validation_result.get("urgency", "MEDIUM"),
             candidates=annotated_candidates,
+            recipient_blood_group=validation_result.get("blood_group"),
         )
 
         # Dispatch alerts via Notification Agent (Part 12)

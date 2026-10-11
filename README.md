@@ -3,7 +3,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-189%2F189%20passing-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-243%2F243%20passing-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-92%25-success.svg)](tests/)
 [![A2A Protocol](https://img.shields.io/badge/Architecture-Agent--to--Agent%20(A2A)-purple.svg)](app/agents/a2a/)
 [![MCP Server](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-orange.svg)](app/mcp/)
@@ -30,7 +30,7 @@ The **Blood Donation Matching & Emergency Coordination System** is a prototype m
 7. [API Reference & Clinical Dispatch](#-api-reference--clinical-dispatch)
 8. [Docker Compose & Deployment](#-docker-compose--deployment)
 9. [Local Development & Verification](#-local-development--verification)
-10. [Test Suite & Quality Assurance (189 Tests)](#-test-suite--quality-assurance-189-tests)
+10. [Test Suite & Quality Assurance (243 Tests)](#-test-suite--quality-assurance-243-tests)
 11. [Project Directory Structure](#-project-directory-structure)
 
 ---
@@ -424,6 +424,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"   # paste the outpu
 | `JWT_SECRET_KEY` | Yes | At least 32 characters. Never commit `.env`; use a different value per environment. |
 | `CORS_ORIGINS` | No | Comma-separated allowed browser origins. `*` is rejected. |
 | `DATABASE_URL` | No | Defaults to local SQLite. |
+| `DONOR_MIN_GAP_DAYS` | No | Minimum days between a donor's donations (default 56; accepts 1-365). Confirm with your clinical lead. |
 
 ### 4. Create the First Administrator
 Public registration only creates `HOSPITAL_STAFF`. Create an admin from the command line (the password is prompted, never passed as an argument):
@@ -445,9 +446,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ---
 
-## 🧪 Test Suite & Quality Assurance (189 Tests)
+## 🧪 Test Suite & Quality Assurance (243 Tests)
 
-The automated suite has **189 tests across 19 modules** covering unit, integration and access-control checks. It uses synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated.
+The automated suite has **243 tests across 23 modules** covering unit, integration and access-control checks. It uses synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated.
 
 ### Run Full Test Suite
 ```bash
@@ -467,6 +468,7 @@ python -m pytest -v --cov=app --cov-report=term-missing
 | `tests/agents/test_coordinator_agent.py` | Coordinator state machine and end-to-end pipeline | 12 |
 | `tests/agents/test_location_agent.py` | Distance calculation and swappable routing providers | 13 |
 | `tests/agents/test_matching_agent.py` | RBC compatibility and candidate ranking | 11 |
+| `tests/agents/test_matching_safety.py` | Expired stock and donor cool-down excluded from matches | 11 |
 | `tests/agents/test_nl_interface.py` | Free-text parsing into structured requests | 4 |
 | `tests/agents/test_notification_agent.py` | Notification messages and console provider | 5 |
 | `tests/agents/test_requirement_agent.py` | Request validation (blood group, units, urgency) | 7 |
@@ -475,14 +477,17 @@ python -m pytest -v --cov=app --cov-report=term-missing
 | `tests/api/test_auth_and_audit.py` | Login, tokens and audit log | 6 |
 | `tests/api/test_frontend_dashboard.py` | Frontend serving, login screen and token handling | 4 |
 | `tests/api/test_security.py` | Auth on every route, role matrix, registration rules, JWT secret and CORS config | 67 |
+| `tests/api/test_medical_safety_api.py` | Expiry and donor-gap rules through the HTTP API | 3 |
 | `tests/db/test_models.py` | ORM models, relationships, constraints | 9 |
 | `tests/db/test_seed.py` | Synthetic data seeding | 2 |
 | `tests/mcp/test_mcp_server.py` | MCP tool listing, schemas and invocation | 10 |
+| `tests/services/test_eligibility.py` | Expiry and donor-gap rules, configuration | 24 |
 | `tests/services/test_optimization_service.py` | Multi-source allocation | 6 |
+| `tests/services/test_scarce_blood_policy.py` | O- conservation policy in optimizer and coordinator | 16 |
 | `tests/services/test_routing_provider.py` | Haversine / OSRM providers and fallback | 5 |
 | `tests/test_main.py` | App startup and health endpoint | 3 |
 | `tests/test_observability.py` | Metrics snapshot and /metrics (ADMIN) | 3 |
-| **TOTAL** | | **189** |
+| **TOTAL** | | **243** |
 
 ---
 
@@ -578,7 +583,7 @@ python -m pytest -v --cov=app --cov-report=term-missing
 │       ├── index.html                   # Command Center interface
 │       ├── styles.css                   # Responsive dark-theme clinical styling
 │       └── app.js                       # Live polling & interactive dispatch logic
-└── tests/                               # Comprehensive Automated Test Suite (189 Tests)
+└── tests/                               # Comprehensive Automated Test Suite (243 Tests)
     ├── conftest.py                      # Shared test fixtures (db_session, client)
     ├── test_main.py
     ├── test_observability.py

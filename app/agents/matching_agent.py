@@ -12,6 +12,7 @@ Key principles:
 5. Does NOT calculate distance, route, or ETA (reserved for subsequent agents).
 """
 
+from datetime import date
 from typing import Any, Dict, List, Optional, Union
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,7 @@ from app.models.blood_request import BloodRequest
 from app.models.donor import Donor
 from app.models.enums import MatchSourceType
 from app.services.compatibility import get_compatible_donor_groups
+from app.services.eligibility import get_donor_min_gap_days, is_donor_eligible, is_stock_usable
 
 
 class MatchingAgent:
@@ -145,6 +147,7 @@ class MatchingAgent:
         request_data: Union[Dict[str, Any], BloodRequest],
         inventories: Optional[List[Union[Dict[str, Any], BloodInventory]]] = None,
         donors: Optional[List[Union[Dict[str, Any], Donor]]] = None,
+        today: Optional[date] = None,
     ) -> Dict[str, Any]:
         """Find all compatible blood bank inventory and donor matches for a blood request.
         
@@ -177,17 +180,21 @@ class MatchingAgent:
                 ]
             }
         """
+        today = today or date.today()
+        min_gap = get_donor_min_gap_days()
+        excluded = {"expired_inventory_batches": 0, "donors_in_cooldown": 0}
+
         # 1. Extract request attributes
         request_id, recipient_group = self._extract_request_info(request_data)
 
         if not recipient_group:
-            return {"request_id": request_id, "matches": []}
+            return {"request_id": request_id, "matches": [], "excluded": excluded}
 
         # 2. Determine ordered compatible donor groups (exact match is always index 0)
         compatible_groups = get_compatible_donor_groups(recipient_group)
         if not compatible_groups:
             # Unknown or unsupported blood group -> no matches possible
-            return {"request_id": request_id, "matches": []}
+            return {"request_id": request_id, "matches": [], "excluded": excluded}
 
         # Lookup table for priority rank based on compatibility: exact match = 0, others = 1, 2, ...
         group_priority = {bg: rank for rank, bg in enumerate(compatible_groups)}
@@ -209,6 +216,9 @@ class MatchingAgent:
 
             # Must be medically compatible and have units available > 0
             if bg in group_priority and units > 0:
+                if not is_stock_usable(inv_data["expiry_date"], today=today):
+                    excluded["expired_inventory_batches"] += 1
+                    continue
                 matches.append({
                     "source_type": MatchSourceType.BLOOD_BANK.value,
                     "source_id": inv_data["bank_id"],
@@ -229,6 +239,9 @@ class MatchingAgent:
 
             # Must be medically compatible and currently marked available
             if bg in group_priority and available:
+                if not is_donor_eligible(donor_data["last_donation_date"], today=today, min_gap_days=min_gap):
+                    excluded["donors_in_cooldown"] += 1
+                    continue
                 matches.append({
                     "source_type": MatchSourceType.DONOR.value,
                     "source_id": donor_data["donor_id"],
@@ -260,6 +273,7 @@ class MatchingAgent:
         return {
             "request_id": request_id,
             "matches": clean_matches,
+            "excluded": excluded,
         }
 
     # -------------------------------------------------------------------------
@@ -314,10 +328,12 @@ class MatchingAgent:
             bank_id = item.get("bank_id") or item.get("source_id")
             bg = item.get("blood_group")
             units = item.get("units_available", 0)
+            expiry = item.get("expiry_date")
         elif isinstance(item, BloodInventory):
             bank_id = item.bank_id
             bg = item.blood_group
             units = item.units_available
+            expiry = item.expiry_date
         else:
             return None
 
@@ -328,6 +344,7 @@ class MatchingAgent:
             "bank_id": bank_id,
             "blood_group": bg.strip().upper(),
             "units_available": int(units) if units is not None else 0,
+            "expiry_date": expiry,
         }
 
     def _parse_donor(
@@ -338,10 +355,12 @@ class MatchingAgent:
             donor_id = item.get("donor_id") or item.get("source_id")
             bg = item.get("blood_group")
             available = item.get("available", True)
+            last_donation = item.get("last_donation_date")
         elif isinstance(item, Donor):
             donor_id = item.donor_id
             bg = item.blood_group
             available = item.available
+            last_donation = item.last_donation_date
         else:
             return None
 
@@ -352,4 +371,5 @@ class MatchingAgent:
             "donor_id": donor_id,
             "blood_group": bg.strip().upper(),
             "available": bool(available),
+            "last_donation_date": last_donation,
         }

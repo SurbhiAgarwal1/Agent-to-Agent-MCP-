@@ -8,6 +8,8 @@ minimizing travel burden and respecting medical donor limitations.
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from app.services.scarce_blood_policy import PENALTY_KM_EQUIVALENT, conservation_factor
+
 
 class FulfillmentStatus(str, Enum):
     """Fulfillment state of a blood allocation plan."""
@@ -35,6 +37,7 @@ class OptimizationService:
         cls,
         candidate: Dict[str, Any],
         urgency: str,
+        recipient_blood_group: Optional[str] = None,
     ) -> float:
         """Calculate weighted dispatch score for a candidate source.
         
@@ -61,6 +64,11 @@ class OptimizationService:
         if str(source_type).upper() == "BLOOD_BANK":
             score -= 0.5
 
+        # Conserve scarce O- blood for routine requests (fades with urgency)
+        score += PENALTY_KM_EQUIVALENT * conservation_factor(
+            candidate.get("blood_group"), recipient_blood_group, urgency
+        )
+
         return round(score, 4)
 
     def optimize(
@@ -69,6 +77,7 @@ class OptimizationService:
         units_required: int,
         urgency: str,
         candidates: List[Dict[str, Any]],
+        recipient_blood_group: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a multi-source fulfillment plan.
         
@@ -107,7 +116,7 @@ class OptimizationService:
         scored_candidates = []
         for cand in candidates:
             c = dict(cand)
-            score = self.calculate_candidate_score(c, urgency)
+            score = self.calculate_candidate_score(c, urgency, recipient_blood_group)
             c["_optimization_score"] = score
             scored_candidates.append(c)
 

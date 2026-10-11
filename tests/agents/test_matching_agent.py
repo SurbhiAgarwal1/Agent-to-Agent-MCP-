@@ -271,7 +271,7 @@ def test_no_matches():
         donors=mock_donors,
     )
 
-    assert result == {"request_id": 106, "matches": []}
+    assert result["request_id"] == 106 and result["matches"] == []
 
 
 # -----------------------------------------------------------------------------
