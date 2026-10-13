@@ -1,7 +1,8 @@
-"""Single Orchestration function for Agent-to-Agent (A2A) message flow.
+"""A2A entry point that runs the discovery flow through the Coordinator.
 
-Coordinates the Requirement -> Matching -> Location agent flow strictly through
-the in-process MessageBus.
+Agents never message each other. The CoordinatorAgent is the hub: it sends each agent a
+request over the in-process MessageBus and receives the reply. This function runs that same
+flow as a read-only preview (nothing is saved, no notifications are sent).
 """
 
 import uuid
@@ -9,11 +10,8 @@ from typing import Any, Dict, Optional, Union
 from sqlalchemy.orm import Session
 
 from app.models.blood_request import BloodRequest
-from app.agents.requirement_agent import RequirementAgent
-from app.agents.matching_agent import MatchingAgent
-from app.agents.location_agent import LocationAgent
 from app.agents.a2a.bus import MessageBus
-from app.agents.a2a.message import A2AMessage, A2AMessageType
+from app.agents.a2a.message import A2AMessageType
 
 
 def orchestrate_a2a_flow(
@@ -22,41 +20,14 @@ def orchestrate_a2a_flow(
     bus: Optional[MessageBus] = None,
     correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Execute the sequential A2A communication flow across the three core agents.
-    
-    Flow:
-        Orchestrator -> (A2A Message) -> RequirementAgent
-                     -> (A2A Message) -> MatchingAgent
-                     -> (A2A Message) -> LocationAgent
-                     -> (A2A Response) -> Orchestrator
-                     
-    Args:
-        request_data: Dictionary or BloodRequest instance with request fields.
-        db: Optional SQLAlchemy Session.
-        bus: Optional MessageBus instance (created if not provided).
-        correlation_id: Optional tracking ID to trace across all messages.
-        
+    """Run Requirement -> Matching -> Location through the Coordinator hub (preview only).
+
     Returns:
-        Structured dictionary containing:
-            - success: bool
-            - correlation_id: str
-            - result: dict (annotated candidates & requirement)
-            - error: Optional error string if any step failed
-            - trace: list of message summaries showing full A2A message exchange
+        success, correlation_id, final_message_type, result (requirement, hospital and
+        located candidates), error (if any) and trace (every A2A message exchanged).
     """
-    message_bus = bus or MessageBus()
+    from app.agents.coordinator_agent import CoordinatorAgent
 
-    # 1. Instantiate the agents with reference to the message bus
-    req_agent = RequirementAgent(db=db, bus=message_bus)
-    match_agent = MatchingAgent(db=db, bus=message_bus)
-    loc_agent = LocationAgent(bus=message_bus)
-
-    # 2. Register each agent on the message bus
-    message_bus.register_agent("RequirementAgent", req_agent.handle_a2a_message)
-    message_bus.register_agent("MatchingAgent", match_agent.handle_a2a_message)
-    message_bus.register_agent("LocationAgent", loc_agent.handle_a2a_message)
-
-    # 3. Format input payload
     if isinstance(request_data, BloodRequest):
         payload = {
             "request_id": request_data.request_id,
@@ -68,41 +39,35 @@ def orchestrate_a2a_flow(
     else:
         payload = dict(request_data)
 
-    req_id = payload.get("request_id", "anon")
-    corr_id = correlation_id or f"corr-{req_id}-{uuid.uuid4().hex[:8]}"
-
-    # 4. Create initial A2A message to RequirementAgent
-    initial_message = A2AMessage.create(
-        sender_agent="A2AOrchestrator",
-        receiver_agent="RequirementAgent",
-        message_type=A2AMessageType.REQUIREMENT_VALIDATE_REQUEST,
-        payload=payload,
-        correlation_id=corr_id,
-    )
-
-    # 5. Dispatch message through the bus
-    final_message = message_bus.send(initial_message)
-
-    # 6. Extract trace logs for this correlation_id
-    messages_trace = message_bus.get_messages_for_correlation_id(corr_id)
-    trace_summary = [
-        {
-            "message_id": m.message_id,
-            "sender": m.sender_agent,
-            "receiver": m.receiver_agent,
-            "type": m.message_type,
-            "timestamp": m.timestamp,
-        }
-        for m in messages_trace
+    corr_id = correlation_id or f"corr-{payload.get('request_id', 'anon')}-{uuid.uuid4().hex[:8]}"
+    coordinator = CoordinatorAgent(db=db, bus=bus)
+    outcome = coordinator.coordinate(request_input=payload, correlation_id=corr_id, persist=False)
+    trace = [
+        {k: m[k] for k in ("message_id", "sender", "receiver", "type", "timestamp")}
+        for m in outcome["a2a_trace"]
     ]
 
-    is_error = (final_message.message_type == A2AMessageType.A2A_ERROR)
+    if not outcome["success"]:
+        return {
+            "success": False,
+            "correlation_id": corr_id,
+            "final_message_type": A2AMessageType.A2A_ERROR,
+            "result": {"error": outcome["error"], "details": outcome.get("details")},
+            "error": outcome["error"],
+            "trace": trace,
+        }
 
     return {
-        "success": not is_error,
+        "success": True,
         "correlation_id": corr_id,
-        "final_message_type": final_message.message_type,
-        "result": final_message.payload,
-        "error": final_message.payload.get("error") if is_error else None,
-        "trace": trace_summary,
+        "final_message_type": A2AMessageType.LOCATION_DISTANCES_CALCULATED_EVENT,
+        "result": {
+            "hospital_id": outcome["hospital"]["hospital_id"],
+            "hospital_coords": outcome["hospital"],
+            "requirement": outcome["requirement"],
+            "candidates_count": outcome["candidates_count"],
+            "candidates": outcome["ranked_matches"],
+        },
+        "error": None,
+        "trace": trace,
     }

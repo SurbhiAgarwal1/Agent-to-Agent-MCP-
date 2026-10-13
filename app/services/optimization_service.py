@@ -154,6 +154,8 @@ class OptimizationService:
                 "units": units_to_take,
                 "distance_km": cand.get("distance_km"),
             }
+            if cand.get("blood_group"):
+                plan_entry["blood_group"] = cand["blood_group"]
             if "name" in cand:
                 plan_entry["name"] = cand["name"]
             if "estimated_time" in cand:

@@ -6,6 +6,7 @@ tracking the request through a formal state machine and persisting results to th
 """
 
 import uuid
+from contextlib import nullcontext
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timezone
@@ -22,6 +23,10 @@ from app.agents.matching_agent import MatchingAgent
 from app.agents.location_agent import LocationAgent
 from app.agents.a2a.bus import MessageBus
 from app.agents.a2a.message import A2AMessage, A2AMessageType
+from app.agents.notification_agent import NotificationAgent
+
+COORDINATOR_NAME = "CoordinatorAgent"
+from app.services.fulfillment_service import COORDINATION_LOCK, refresh_request_status
 from app.services.scarce_blood_policy import PENALTY_SCORE_POINTS, conservation_factor
 
 
@@ -50,10 +55,47 @@ class CoordinatorAgent:
             bus: Optional MessageBus instance for A2A communication.
         """
         self.db = db
-        self.bus = bus or MessageBus()
+        self.bus = bus or MessageBus(hub=COORDINATOR_NAME)
+        if self.bus.hub is None:
+            self.bus.hub = COORDINATOR_NAME  # agents may only talk to the Coordinator
         self.req_agent = RequirementAgent(db=self.db, bus=self.bus)
         self.match_agent = MatchingAgent(db=self.db, bus=self.bus)
         self.loc_agent = LocationAgent(bus=self.bus)
+        self.notif_agent = NotificationAgent(bus=self.bus)
+        self.bus.register_agent("RequirementAgent", self.req_agent.handle_a2a_message)
+        self.bus.register_agent("MatchingAgent", self.match_agent.handle_a2a_message)
+        self.bus.register_agent("LocationAgent", self.loc_agent.handle_a2a_message)
+        self.bus.register_agent("NotificationAgent", self.notif_agent.handle_a2a_message)
+
+    def _ask(self, receiver: str, message_type: str, payload: Dict[str, Any], correlation_id: str):
+        """Send a request to an agent over the A2A bus and return (reply_payload, error_reply).
+
+        Exactly one of the two is None. Agent crashes and refusals arrive as A2A_ERROR replies.
+        """
+        reply = self.bus.send(A2AMessage.create(
+            sender_agent=COORDINATOR_NAME,
+            receiver_agent=receiver,
+            message_type=message_type,
+            payload=payload,
+            correlation_id=correlation_id,
+        ))
+        if reply.message_type == A2AMessageType.A2A_ERROR:
+            return None, reply
+        return reply.payload, None
+
+    def _trace(self, correlation_id: str) -> List[Dict[str, Any]]:
+        """Summaries of every A2A message exchanged for this correlation id."""
+        return [
+            {
+                "message_id": m.message_id,
+                "sender": m.sender_agent,
+                "receiver": m.receiver_agent,
+                "type": m.message_type,
+                "correlation_id": m.correlation_id,
+                "timestamp": m.timestamp,
+            }
+            for m in self.bus.get_messages_for_correlation_id(correlation_id)
+        ]
 
     def calculate_priority_score(
         self,
@@ -89,228 +131,112 @@ class CoordinatorAgent:
         request_id: int,
         persist: bool = True,
     ) -> Dict[str, Any]:
-        """Execute end-to-end orchestration for an emergency blood request."""
+        """Run the coordination flow and return the allocation-oriented view of it.
+
+        This is the same single pipeline as :meth:`coordinate` (validation, matching,
+        distances, optimisation, reservation); it only reshapes the result into
+        ``allocated_sources`` / ``standby_sources``. Raises ValueError when the
+        request or its hospital does not exist.
+        """
         if not self.db:
             raise ValueError("CoordinatorAgent requires an active database session for orchestration.")
-
-        execution_log = []
-        now_str = datetime.now(timezone.utc).isoformat()
-
-        # Step 1: Fetch Blood Request & Hospital
         blood_request = self.db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
         if not blood_request:
             raise ValueError(f"Blood request #{request_id} not found.")
-
         hospital = self.db.query(Hospital).filter(Hospital.hospital_id == blood_request.hospital_id).first()
         if not hospital:
             raise ValueError(f"Hospital #{blood_request.hospital_id} referenced by request #{request_id} not found.")
 
-        execution_log.append({
-            "timestamp": now_str,
-            "step": "INIT",
-            "message": f"Orchestrator initiated for Request #{request_id} from Hospital '{hospital.name}' ({blood_request.units_required} units of {blood_request.blood_group}, Urgency: {blood_request.urgency}).",
-        })
-
-        # Step 2: Requirement Agent Validation & Normalization
-        req_agent = RequirementAgent(db=self.db)
-        req_input = {
-            "request_id": blood_request.request_id,
-            "hospital_id": blood_request.hospital_id,
-            "blood_group": blood_request.blood_group,
-            "units_required": blood_request.units_required,
-            "urgency": blood_request.urgency,
+        result = self.coordinate(request_input=request_id, persist=persist)
+        hospital_info = {
+            "hospital_id": hospital.hospital_id,
+            "name": hospital.name,
+            "address": hospital.address,
+            "latitude": hospital.latitude,
+            "longitude": hospital.longitude,
         }
-        req_result = req_agent.process(req_input)
+        step_for_state = {
+            "RECEIVED": "INIT", "VALIDATED": "REQUIREMENT_AGENT", "MATCHED": "MATCHING_AGENT",
+            "LOCATED": "LOCATION_AND_RANKING", "COMPLETED": "ALLOCATION_ENGINE", "FAILED": "FAILED",
+        }
+        execution_log = [
+            {"timestamp": h["timestamp"], "step": step_for_state.get(h["state"], h["state"]), "message": h["detail"]}
+            for h in result.get("state_history", [])
+        ]
 
-        if not req_result.get("valid"):
-            execution_log.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "step": "REQUIREMENT_VALIDATION_FAILED",
-                "message": f"Requirement validation failed: {req_result.get('errors')}",
-            })
+        if not result.get("success"):
+            if result.get("failed_at") == "MATCHING":
+                # Nothing compatible exists: report an empty allocation rather than an error.
+                return {
+                    "success": True,
+                    "request_id": request_id,
+                    "fulfillment_status": "UNFULFILLED",
+                    "units_required": blood_request.units_required,
+                    "units_allocated": 0,
+                    "hospital": hospital_info,
+                    "allocated_sources": [],
+                    "standby_sources": [],
+                    "execution_log": execution_log,
+                }
             return {
                 "success": False,
                 "request_id": request_id,
-                "error": "Requirement validation failed",
-                "details": req_result.get("errors"),
+                "failed_at": result.get("failed_at"),
+                "error": result.get("error"),
+                "details": result.get("details"),
                 "execution_log": execution_log,
+                "a2a_trace": result.get("a2a_trace", []),
             }
 
+        plan = result["fulfillment_plan"]
+        by_key = {(c["source_type"], c["source_id"], c.get("blood_group")): c for c in result["ranked_matches"]}
+        allocated, planned_keys = [], set()
+        for entry in plan["plan"]:
+            key = (entry["source_type"], entry["source_id"], entry.get("blood_group"))
+            planned_keys.add(key)
+            record = dict(by_key.get(key, entry))
+            record["units_allocated"] = entry["units"]
+            allocated.append(record)
+        standby = [c for k, c in by_key.items() if k not in planned_keys]
+        status = "FULFILLED" if plan["status"] == "FULLY_FULFILLED" else plan["status"]
         execution_log.append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "step": "REQUIREMENT_AGENT",
-            "message": f"Requirement normalized and validated: Blood Group {req_result['blood_group']}, {req_result['units_required']} units.",
+            "step": "PERSISTENCE" if persist else "PERSISTENCE_SKIPPED",
+            "message": f"{len(allocated)} source(s) reserved; request status '{result.get('request_status')}'."
+                       if persist else "persist=False: nothing written.",
         })
-
-        # Step 3: Matching Agent - Candidate Discovery
-        match_agent = MatchingAgent(db=self.db)
-        match_result = match_agent.find_matches(req_result)
-        raw_candidates = match_result.get("matches", [])
-
-        execution_log.append({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "step": "MATCHING_AGENT",
-            "message": f"Matching Agent identified {len(raw_candidates)} compatible candidates (excluded as unsafe: {match_result.get('excluded', {})}).",
-        })
-
-        # Step 4: Location Agent - Distance, ETA & Composite Scoring
-        loc_agent = LocationAgent()
-        enriched_candidates = []
-        for cand in raw_candidates:
-            source_type = cand["source_type"]
-            source_id = cand["source_id"]
-            source_bg = cand["blood_group"]
-            avail_units = cand["units_available"]
-
-            if source_type == MatchSourceType.BLOOD_BANK.value:
-                bank = self.db.query(BloodBank).filter(BloodBank.bank_id == source_id).first()
-                name = bank.name if bank else f"Blood Bank #{source_id}"
-                address = bank.address if bank else "Central District"
-                dest_lat = bank.latitude if bank else hospital.latitude
-                dest_lon = bank.longitude if bank else hospital.longitude
-            else:
-                donor = self.db.query(Donor).filter(Donor.donor_id == source_id).first()
-                name = donor.name if donor else f"Donor #{source_id}"
-                address = "Voluntary Donor (Mobile Dispatch)"
-                dest_lat = donor.latitude if donor else hospital.latitude
-                dest_lon = donor.longitude if donor else hospital.longitude
-
-            loc_info = loc_agent.calculate_distance(
-                origin_lat=hospital.latitude,
-                origin_lon=hospital.longitude,
-                dest_lat=dest_lat,
-                dest_lon=dest_lon,
-                include_eta=True,
-            )
-
-            is_exact = (source_bg == req_result["blood_group"])
-            dist_km = loc_info["distance_km"]
-            score = self.calculate_priority_score(
-                distance_km=dist_km,
-                source_type=source_type,
-                is_exact_match=is_exact,
-                urgency=req_result["urgency"],
-                source_blood_group=source_bg,
-                recipient_blood_group=req_result["blood_group"],
-            )
-
-            enriched_candidates.append({
-                "source_type": source_type,
-                "source_id": source_id,
-                "name": name,
-                "address": address,
-                "blood_group": source_bg,
-                "is_exact_match": is_exact,
-                "units_available": avail_units,
-                "distance_km": dist_km,
-                "estimated_time": loc_info["estimated_time"],
-                "priority_score": score,
-            })
-
-        enriched_candidates.sort(key=lambda x: (-x["priority_score"], x["distance_km"]))
-
-        execution_log.append({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "step": "LOCATION_AND_RANKING",
-            "message": f"Calculated ETAs and prioritized {len(enriched_candidates)} candidates via multi-criteria composite scoring.",
-        })
-
-        # Step 5: Resource Allocation Planning
-        units_needed = req_result["units_required"]
-        remaining = units_needed
-        allocated_sources = []
-        standby_sources = []
-
-        for cand in enriched_candidates:
-            if remaining > 0:
-                units_allocated = min(cand["units_available"], remaining)
-                remaining -= units_allocated
-                allocated_record = dict(cand)
-                allocated_record["units_allocated"] = units_allocated
-                allocated_sources.append(allocated_record)
-            else:
-                standby_sources.append(cand)
-
-        total_allocated = units_needed - remaining
-        if total_allocated >= units_needed:
-            fulfillment_status = "FULFILLED"
-        elif total_allocated > 0:
-            fulfillment_status = "PARTIALLY_FULFILLED"
-        else:
-            fulfillment_status = "UNFULFILLED"
-
-        execution_log.append({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "step": "ALLOCATION_ENGINE",
-            "message": f"Resource Allocation Plan formulated: {total_allocated}/{units_needed} units allocated across {len(allocated_sources)} source(s). Status: {fulfillment_status}.",
-        })
-
-        # Step 6: Database Persistence
-        if persist:
-            self.db.query(Match).filter(Match.request_id == request_id).delete()
-            for item in allocated_sources:
-                match_entry = Match(
-                    request_id=request_id,
-                    source_type=item["source_type"],
-                    source_id=item["source_id"],
-                    distance_km=item["distance_km"],
-                    estimated_time=item["estimated_time"],
-                    priority_score=item["priority_score"],
-                    status=MatchStatus.ACCEPTED.value,
-                )
-                self.db.add(match_entry)
-                self.db.flush()
-                item["match_id"] = match_entry.match_id
-
-            for item in standby_sources:
-                match_entry = Match(
-                    request_id=request_id,
-                    source_type=item["source_type"],
-                    source_id=item["source_id"],
-                    distance_km=item["distance_km"],
-                    estimated_time=item["estimated_time"],
-                    priority_score=item["priority_score"],
-                    status=MatchStatus.PROPOSED.value,
-                )
-                self.db.add(match_entry)
-                self.db.flush()
-                item["match_id"] = match_entry.match_id
-
-            if fulfillment_status == "FULFILLED":
-                blood_request.status = RequestStatus.FULFILLED.value
-            elif fulfillment_status == "PARTIALLY_FULFILLED":
-                blood_request.status = RequestStatus.PARTIALLY_FULFILLED.value
-            else:
-                blood_request.status = RequestStatus.PROCESSING.value
-
-            self.db.commit()
-            self.db.refresh(blood_request)
-
-            execution_log.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "step": "PERSISTENCE",
-                "message": f"Committed {len(allocated_sources)} accepted matches and updated BloodRequest #{request_id} to '{blood_request.status}'.",
-            })
-
         return {
             "success": True,
             "request_id": request_id,
-            "fulfillment_status": fulfillment_status,
-            "units_required": units_needed,
-            "units_allocated": total_allocated,
-            "hospital": {
-                "hospital_id": hospital.hospital_id,
-                "name": hospital.name,
-                "address": hospital.address,
-                "latitude": hospital.latitude,
-                "longitude": hospital.longitude,
-            },
-            "allocated_sources": allocated_sources,
-            "standby_sources": standby_sources,
+            "fulfillment_status": status,
+            "request_status": result.get("request_status"),
+            "units_required": result["requirement"]["units_required"],
+            "units_allocated": plan["total_units"],
+            "hospital": hospital_info,
+            "allocated_sources": allocated,
+            "standby_sources": standby,
             "execution_log": execution_log,
+            "a2a_trace": result.get("a2a_trace", []),
         }
 
     def coordinate(
+        self,
+        request_input: Union[int, Dict[str, Any], BloodRequest],
+        correlation_id: Optional[str] = None,
+        persist: bool = True,
+    ) -> Dict[str, Any]:
+        """Coordinate a blood request end to end (the single coordination flow).
+
+        When persisting, matching -> reservation runs under one lock so two requests
+        cannot reserve the same units at the same moment.
+        """
+        guard = COORDINATION_LOCK if (persist and self.db is not None) else nullcontext()
+        with guard:
+            result = self._coordinate(request_input, correlation_id, persist)
+        result["a2a_trace"] = self._trace(result.get("correlation_id"))
+        return result
+
+    def _coordinate(
         self,
         request_input: Union[int, Dict[str, Any], BloodRequest],
         correlation_id: Optional[str] = None,
@@ -387,7 +313,7 @@ class CoordinatorAgent:
         elif isinstance(request_input, dict):
             raw_payload = dict(request_input)
             req_id = raw_payload.get("request_id")
-            if req_id and self.db:
+            if req_id and self.db and persist:  # a preview must not attach to a real request that happens to share the id
                 blood_request_model = self.db.query(BloodRequest).filter(BloodRequest.request_id == req_id).first()
         else:
             current_state = CoordinatorState.FAILED
@@ -402,22 +328,45 @@ class CoordinatorAgent:
         req_id = raw_payload.get("request_id", 1)
         corr_id = correlation_id or f"coord-{req_id}-{uuid.uuid4().hex[:8]}"
 
+        delivered_units = 0
+        if blood_request_model is not None:
+            if blood_request_model.status in (RequestStatus.FULFILLED.value, RequestStatus.CANCELLED.value):
+                current_state = CoordinatorState.FAILED
+                error_msg = f"Request #{req_id} is already {blood_request_model.status} and cannot be coordinated again."
+                log_transition(current_state, error_msg)
+                return self._failure_response(
+                    request_id=req_id, failed_at="STATE", error=error_msg,
+                    state_history=state_history, correlation_id=corr_id,
+                )
+            if self.db is not None:
+                delivered_units = sum(
+                    m.units or 0 for m in self.db.query(Match).filter(
+                        Match.request_id == blood_request_model.request_id,
+                        Match.status == MatchStatus.COMPLETED.value)
+                )
+
         # ---------------------------------------------------------------------
         # Step 2: State = VALIDATED (Requirement Agent)
         # ---------------------------------------------------------------------
-        validation_result = self.req_agent.process(raw_payload)
-        if not validation_result.get("valid"):
+        reply, error_reply = self._ask(
+            "RequirementAgent", A2AMessageType.REQUIREMENT_VALIDATE_REQUEST, raw_payload, corr_id)
+        if error_reply is not None:
             current_state = CoordinatorState.FAILED
-            error_msg = f"Requirement validation failed: {', '.join(validation_result.get('errors', []))}"
+            errors = (error_reply.payload.get("details") or {}).get("errors")
+            if errors:
+                error_msg = f"Requirement validation failed: {', '.join(errors)}"
+            else:
+                error_msg = error_reply.payload.get("error", "Requirement validation failed.")
             log_transition(current_state, error_msg)
             return self._failure_response(
                 request_id=req_id,
                 failed_at="VALIDATION",
                 error=error_msg,
-                details=validation_result.get("errors"),
+                details=errors,
                 state_history=state_history,
                 correlation_id=corr_id,
             )
+        validation_result = reply["requirement"]
 
         current_state = CoordinatorState.VALIDATED
         log_transition(
@@ -428,11 +377,26 @@ class CoordinatorAgent:
         # ---------------------------------------------------------------------
         # Step 3: State = MATCHED (Matching Agent)
         # ---------------------------------------------------------------------
-        matches_result = self.match_agent.find_matches(
-            request_data=validation_result,
-            inventories=raw_payload.get("inventories"),
-            donors=raw_payload.get("donors"),
+        reply, error_reply = self._ask(
+            "MatchingAgent",
+            A2AMessageType.MATCHING_FIND_SOURCES_REQUEST,
+            {
+                "requirement": validation_result,
+                "hospital_id": raw_payload.get("hospital_id"),
+                "inventories": raw_payload.get("inventories"),
+                "donors": raw_payload.get("donors"),
+            },
+            corr_id,
         )
+        if error_reply is not None:
+            current_state = CoordinatorState.FAILED
+            error_msg = f"Matching failed: {error_reply.payload.get('error')}"
+            log_transition(current_state, error_msg)
+            return self._failure_response(
+                request_id=req_id, failed_at="MATCHING", error=error_msg,
+                state_history=state_history, correlation_id=corr_id,
+            )
+        matches_result = reply
         candidates = matches_result.get("matches", [])
         if not candidates:
             current_state = CoordinatorState.FAILED
@@ -478,7 +442,8 @@ class CoordinatorAgent:
                 correlation_id=corr_id,
             )
 
-        annotated_candidates = []
+        # Resolve each candidate's name and coordinates, then ask the LocationAgent for distances
+        located_input = []
         for cand in candidates:
             c_dict = dict(cand)
             dest_lat = c_dict.get("latitude")
@@ -513,29 +478,56 @@ class CoordinatorAgent:
                     state_history=state_history,
                     correlation_id=corr_id,
                 )
+            c_dict["latitude"] = dest_lat
+            c_dict["longitude"] = dest_lon
+            located_input.append(c_dict)
 
-            try:
-                dist_info = self.loc_agent.calculate_distance(
-                    origin_lat=float(hosp_lat),
-                    origin_lon=float(hosp_lon),
-                    dest_lat=float(dest_lat),
-                    dest_lon=float(dest_lon),
-                    include_eta=True,
-                )
-                c_dict["distance_km"] = dist_info["distance_km"]
-                c_dict["estimated_time"] = dist_info["estimated_time"]
-                annotated_candidates.append(c_dict)
-            except Exception as loc_err:
+        reply, error_reply = self._ask(
+            "LocationAgent",
+            A2AMessageType.LOCATION_CALCULATE_DISTANCES_REQUEST,
+            {
+                "hospital_id": hospital_id,
+                "hospital_coords": {
+                    "hospital_id": hospital_id, "name": hosp_name, "address": hosp_address,
+                    "latitude": hosp_lat, "longitude": hosp_lon,
+                },
+                "candidates": located_input,
+                "requirement": validation_result,
+            },
+            corr_id,
+        )
+        if error_reply is not None:
+            current_state = CoordinatorState.FAILED
+            error_msg = f"Location calculation failed: {error_reply.payload.get('error')}"
+            log_transition(current_state, error_msg)
+            return self._failure_response(
+                request_id=req_id, failed_at="LOCATION", error=error_msg,
+                state_history=state_history, correlation_id=corr_id,
+            )
+
+        annotated_candidates = []
+        for c_dict in reply["candidates"]:
+            if c_dict.get("distance_km") is None:
                 current_state = CoordinatorState.FAILED
-                error_msg = f"Location calculation failed for candidate #{c_dict['source_id']}: {loc_err}"
+                error_msg = (
+                    f"Location calculation failed for candidate #{c_dict['source_id']}: "
+                    f"{c_dict.get('location_error', 'no distance returned')}"
+                )
                 log_transition(current_state, error_msg)
                 return self._failure_response(
-                    request_id=req_id,
-                    failed_at="LOCATION",
-                    error=error_msg,
-                    state_history=state_history,
-                    correlation_id=corr_id,
+                    request_id=req_id, failed_at="LOCATION", error=error_msg,
+                    state_history=state_history, correlation_id=corr_id,
                 )
+            c_dict["is_exact_match"] = c_dict.get("blood_group") == validation_result["blood_group"]
+            c_dict["priority_score"] = self.calculate_priority_score(
+                distance_km=c_dict["distance_km"],
+                source_type=c_dict["source_type"],
+                is_exact_match=c_dict["is_exact_match"],
+                urgency=validation_result["urgency"],
+                source_blood_group=c_dict.get("blood_group"),
+                recipient_blood_group=validation_result["blood_group"],
+            )
+            annotated_candidates.append(c_dict)
 
         # Rank candidates strictly by distance ascending
         annotated_candidates.sort(key=lambda c: c["distance_km"])
@@ -547,53 +539,96 @@ class CoordinatorAgent:
         )
 
         # ---------------------------------------------------------------------
-        # Step 5: State = COMPLETED & Database Persistence
+        # Step 5: Allocation plan, reservation (holds) and persistence
         # ---------------------------------------------------------------------
+        from app.services.optimization_service import OptimizationService
+        units_still_needed = max(0, validation_result.get("units_required", 1) - delivered_units)
+        fulfillment_plan = OptimizationService().optimize(
+            request_id=req_id,
+            units_required=units_still_needed,
+            urgency=validation_result.get("urgency", "MEDIUM"),
+            candidates=annotated_candidates,
+            recipient_blood_group=validation_result.get("blood_group"),
+        )
+        # Fixed-size details for callers: the original need, not only what is left
+        fulfillment_plan["details"]["units_delivered_already"] = delivered_units
+
+        request_status = blood_request_model.status if blood_request_model else None
         if persist and self.db and blood_request_model:
-            # Clean existing provisional matches for this request
-            self.db.query(Match).filter(Match.request_id == blood_request_model.request_id).delete()
+            planned_units = {
+                (p["source_type"], p["source_id"], p.get("blood_group")): p["units"]
+                for p in fulfillment_plan["plan"]
+            }
+            # Release this request's previous proposals/holds; delivered and rejected rows are history.
+            self.db.query(Match).filter(
+                Match.request_id == blood_request_model.request_id,
+                Match.status.in_([MatchStatus.PROPOSED.value, MatchStatus.ACCEPTED.value]),
+            ).delete(synchronize_session=False)
 
             for cand in annotated_candidates:
+                units = planned_units.get((cand["source_type"], cand["source_id"], cand.get("blood_group")))
                 match_row = Match(
                     request_id=blood_request_model.request_id,
                     source_type=cand["source_type"],
                     source_id=cand["source_id"],
                     distance_km=cand["distance_km"],
                     estimated_time=cand.get("estimated_time"),
-                    priority_score=round(cand["distance_km"], 2),
-                    status=MatchStatus.PROPOSED.value,
+                    priority_score=cand["priority_score"],
+                    blood_group=cand.get("blood_group"),
+                    units=units,
+                    status=MatchStatus.ACCEPTED.value if units else MatchStatus.PROPOSED.value,
                 )
                 self.db.add(match_row)
                 self.db.flush()
                 cand["match_id"] = match_row.match_id
+                cand["status"] = match_row.status
+                if units:
+                    cand["units_reserved"] = units
+            for entry in fulfillment_plan["plan"]:
+                for cand in annotated_candidates:
+                    if (cand["source_type"], cand["source_id"], cand.get("blood_group")) == (
+                            entry["source_type"], entry["source_id"], entry.get("blood_group")):
+                        entry["match_id"] = cand["match_id"]
 
-            blood_request_model.status = RequestStatus.PROCESSING.value
+            request_status = refresh_request_status(self.db, blood_request_model.request_id)
+            if request_status == RequestStatus.PROCESSING.value and fulfillment_plan["details"]["units_shortage"] > 0:
+                blood_request_model.status = RequestStatus.PARTIALLY_FULFILLED.value
+                request_status = blood_request_model.status
             self.db.commit()
             self.db.refresh(blood_request_model)
 
         current_state = CoordinatorState.COMPLETED
-        log_transition(current_state, "Coordination completed successfully. Results ranked and persisted.")
-
-        # Generate multi-source fulfillment plan using Optimization Engine (Part 10)
-        from app.services.optimization_service import OptimizationService
-        opt_service = OptimizationService()
-        fulfillment_plan = opt_service.optimize(
-            request_id=req_id,
-            units_required=validation_result.get("units_required", 1),
-            urgency=validation_result.get("urgency", "MEDIUM"),
-            candidates=annotated_candidates,
-            recipient_blood_group=validation_result.get("blood_group"),
+        log_transition(
+            current_state,
+            "Coordination completed successfully. "
+            + ("Units reserved and results persisted." if persist else "Preview only; nothing persisted."),
         )
 
-        # Dispatch alerts via Notification Agent (Part 12)
-        from app.agents.notification_agent import NotificationAgent
-        notif_agent = NotificationAgent()
-        notifications_result = notif_agent.notify_plan(
-            hospital_id=hospital_id or 1,
-            request_id=req_id,
-            fulfillment_plan=fulfillment_plan,
-            hospital_name=hosp_name,
-        )
+        # Alerts go out through the Notification Agent only once units are actually reserved
+        notifications_result = {
+            "success": True, "request_id": req_id, "dispatched_count": 0, "notifications": [],
+            "skipped": "preview only; nothing was reserved",
+        }
+        if persist and self.db and blood_request_model:
+            reply, error_reply = self._ask(
+                "NotificationAgent",
+                A2AMessageType.NOTIFICATION_DISPATCH_REQUEST,
+                {
+                    "hospital_id": hospital_id or 1,
+                    "request_id": req_id,
+                    "fulfillment_plan": fulfillment_plan,
+                    "hospital_name": hosp_name,
+                },
+                corr_id,
+            )
+            if error_reply is not None:
+                # The reservation is already saved; report the notification problem without failing it.
+                notifications_result = {
+                    "success": False, "request_id": req_id, "dispatched_count": 0, "notifications": [],
+                    "error": error_reply.payload.get("error"),
+                }
+            else:
+                notifications_result = reply
 
         return {
             "success": True,
@@ -611,6 +646,7 @@ class CoordinatorAgent:
             "candidates_count": len(annotated_candidates),
             "ranked_matches": annotated_candidates,
             "fulfillment_plan": fulfillment_plan,
+            "request_status": request_status,
             "notifications": notifications_result,
             "state_history": state_history,
         }

@@ -2,7 +2,9 @@
 
 from datetime import datetime, timezone
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -24,6 +26,11 @@ from app.agents.coordinator_agent import CoordinatorAgent
 from app.auth.dependencies import get_current_user, require_role
 
 router = APIRouter()
+
+
+class RejectMatchBody(BaseModel):
+    """Optional reason recorded in the audit log when a source is rejected."""
+    reason: Optional[str] = Field(default=None, max_length=300)
 
 
 @router.post(
@@ -288,7 +295,6 @@ def orchestrate_blood_request(
     coordinator = CoordinatorAgent(db=db)
     try:
         result = coordinator.orchestrate(request_id=request_id, persist=True)
-        return result
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -299,6 +305,9 @@ def orchestrate_blood_request(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Orchestration execution failed: {str(exc)}",
         )
+    if not result.get("success") and result.get("failed_at") == "STATE":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.get("error"))
+    return result
 
 
 @router.post(
@@ -327,6 +336,8 @@ def coordinate_blood_request(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_msg,
             )
+        if failed_at == "STATE":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_msg)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Coordination halted at {failed_at}: {error_msg}",
@@ -343,3 +354,65 @@ def coordinate_blood_request(
     )
 
     return result
+
+
+def _match_action(db, current_user, request_id, match_id, action, audit_name, details=None, **kwargs):
+    """Run a match lifecycle action, translating service errors to HTTP errors and auditing success."""
+    from app.services import fulfillment_service as fs
+    from app.services.audit import record_audit_log
+    try:
+        result = action(db, request_id, match_id, **kwargs)
+    except fs.MatchNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except (fs.InvalidMatchState, fs.InsufficientStock) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    record_audit_log(
+        db=db,
+        action=audit_name,
+        resource="match",
+        resource_id=match_id,
+        user_id=current_user.id,
+        details={"request_id": request_id, "request_status": result.get("request_status"), **(details or {})},
+    )
+    return result
+
+
+@router.post(
+    "/{request_id}/matches/{match_id}/complete",
+    summary="Confirm that a reserved match was delivered",
+    description=(
+        "Marks an ACCEPTED (reserved) match COMPLETED. Blood bank stock is reduced "
+        "(earliest-expiring batches first) or the donor starts their donation cool-down, "
+        "and the request becomes PARTIALLY_FULFILLED or FULFILLED."
+    ),
+    responses={404: {"description": "Match not found for this request."},
+               409: {"description": "Match is not in a completable state, or stock is no longer sufficient."}},
+)
+def complete_blood_match(
+    request_id: int,
+    match_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
+):
+    from app.services.fulfillment_service import complete_match
+    return _match_action(db, current_user, request_id, match_id, complete_match, "COMPLETE_MATCH")
+
+
+@router.post(
+    "/{request_id}/matches/{match_id}/reject",
+    summary="Reject a proposed or reserved match",
+    description="Releases the reserved units. The rejected source is not offered again for this request.",
+    responses={404: {"description": "Match not found for this request."},
+               409: {"description": "Match can no longer be rejected."}},
+)
+def reject_blood_match(
+    request_id: int,
+    match_id: int,
+    body: Optional[RejectMatchBody] = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
+):
+    from app.services.fulfillment_service import reject_match
+    reason = body.reason if body else None
+    return _match_action(db, current_user, request_id, match_id, reject_match, "REJECT_MATCH",
+                         details={"reason": reason}, reason=reason)

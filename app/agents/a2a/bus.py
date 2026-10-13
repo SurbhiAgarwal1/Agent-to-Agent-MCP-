@@ -12,8 +12,15 @@ if not logger.handlers:
 class MessageBus:
     """In-process message bus for routing structured A2A messages between agents."""
 
-    def __init__(self):
-        """Initialize message bus with agent registry and audit log."""
+    def __init__(self, hub: Optional[str] = None):
+        """Initialize message bus with agent registry and audit log.
+
+        Args:
+            hub: Optional name of the coordinating agent. When set, every message must
+                have the hub as its sender or receiver, so agents cannot talk to each
+                other directly and all traffic is visible to (and routed by) the hub.
+        """
+        self.hub = hub
         self._handlers: Dict[str, Callable[[A2AMessage], A2AMessage]] = {}
         self._message_log: List[A2AMessage] = []
 
@@ -45,6 +52,20 @@ class MessageBus:
         )
 
         receiver = message.receiver_agent
+        if self.hub and self.hub not in (message.sender_agent, receiver):
+            err_msg = (
+                f"Direct agent-to-agent message {message.sender_agent} -> {receiver} refused: "
+                f"all traffic must go through '{self.hub}'."
+            )
+            logger.error(f"[A2A ERROR] {err_msg}")
+            error_response = message.create_error(
+                sender_agent="MessageBus",
+                error_message=err_msg,
+                details={"hub": self.hub},
+            )
+            self._message_log.append(error_response)
+            return error_response
+
         if receiver not in self._handlers:
             err_msg = f"Receiver agent '{receiver}' is not registered on the message bus."
             logger.error(f"[A2A ERROR] {err_msg}")
