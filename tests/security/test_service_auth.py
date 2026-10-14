@@ -12,6 +12,10 @@ def _status(monkeypatch, *, environment, token, authorization):
     monkeypatch.setenv("ENVIRONMENT", environment)
     sent = []
 
+    async def send(message):
+        # Real ASGI `send` is an awaitable callable; record each message it receives.
+        sent.append(message)
+
     async def inner(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
@@ -19,13 +23,14 @@ def _status(monkeypatch, *, environment, token, authorization):
     app = ServiceAuthenticationMiddleware(inner, protected_prefix="/a2a")
     headers = [] if authorization is None else [(b"authorization", authorization.encode())]
     scope = {"type": "http", "path": "/a2a", "headers": headers}
-    asyncio.run(app(scope, None, sent.append))
+    asyncio.run(app(scope, None, send))
     return sent[0]["status"]
 
 
 def test_service_auth_is_required_in_production_and_optional_only_in_development(monkeypatch):
     assert _status(monkeypatch, environment="production", token=None, authorization=None) == 503
     assert _status(monkeypatch, environment="production", token="too-short", authorization="Bearer too-short") == 503
+    assert _status(monkeypatch, environment="production", token="a" * 40, authorization=None) == 401
     assert _status(monkeypatch, environment="production", token="a" * 40, authorization="Bearer wrong") == 401
     assert _status(monkeypatch, environment="production", token="a" * 40, authorization=f"Bearer {'a' * 40}") == 200
     assert _status(monkeypatch, environment="development", token=None, authorization=None) == 200

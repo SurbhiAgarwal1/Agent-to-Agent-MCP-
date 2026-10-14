@@ -41,6 +41,7 @@ def init_db() -> None:
 # create_all() never alters existing tables, so older databases get them added here.
 _ADDED_COLUMNS = {
     "matches": [("units", "INTEGER"), ("blood_group", "VARCHAR(5)")],
+    "blood_requests": [("created_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL")],
 }
 
 

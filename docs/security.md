@@ -16,7 +16,7 @@ Blood-bank membership records are modeled and admin-managed. This API currently 
 
 ### Resource authorization and IDOR
 
-Request and match actions first resolve the parent request, then check hospital membership before accessing or mutating a match. The fulfillment service also verifies that a match belongs to the supplied request. The request creator ID is retained for provenance, while authorization is based on current active organization membership. Membership revocation takes effect on the next request.
+Request and match actions first resolve the parent request, then check hospital membership before accessing or mutating a match. The fulfillment service also verifies that a match belongs to the supplied request. Each new blood request records the authenticated creator in `blood_requests.created_by_user_id` (a nullable foreign key to `users.id`, `ON DELETE SET NULL`). The value is always taken from the verified token identity; a client-supplied creator is ignored and never returned in responses. The column is nullable so legacy requests created before ownership tracking stay readable under the membership/admin rules above, and `ensure_schema()` adds the column to existing databases at startup (idempotent, no migration framework). The creator ID is retained for provenance only: authorization is based on current active organization membership, so even a request's creator loses access when their membership is revoked or set inactive. Membership revocation takes effect on the next request.
 
 ### A2A and MCP service authentication
 
