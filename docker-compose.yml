@@ -1,22 +1,125 @@
 services:
+  mcp:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["python", "-m", "app.mcp.protocol_server"]
+    environment: &app_environment
+      DATABASE_URL: sqlite:////app/data/blood_donation.db
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
+      OBSERVABILITY_METRICS_PORT: ${OBSERVABILITY_METRICS_PORT:-9464}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-prometheus}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
+      OTEL_SERVICE_NAME: mcp-server
+      MCP_PORT: 8001
+    volumes: [blood_data:/app/data]
+    expose: ["8001", "9464"]
+    depends_on:
+      backend: {condition: service_healthy}
+      jaeger: {condition: service_started}
+
+  coordinator-agent:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8100", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: coordinator
+      COORDINATORAGENT_A2A_URL: http://coordinator-agent:8100/a2a
+      REQUIREMENTAGENT_BASE_URL: http://requirement-agent:8101
+      MATCHINGAGENT_BASE_URL: http://matching-agent:8102
+      LOCATIONAGENT_BASE_URL: http://location-agent:8103
+      NOTIFICATIONAGENT_BASE_URL: http://notification-agent:8104
+      MCP_URL: http://mcp:8001/mcp
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-20}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      OTEL_SERVICE_NAME: coordinator-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8100", "9464"]
+    depends_on: [mcp, backend, jaeger]
+
+  requirement-agent:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8101", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: requirement
+      REQUIREMENTAGENT_A2A_URL: http://requirement-agent:8101/a2a
+      MCP_URL: http://mcp:8001/mcp
+      OTEL_SERVICE_NAME: requirement-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8101", "9464"]
+    depends_on: [mcp, backend, jaeger]
+
+  matching-agent:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8102", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: matching
+      MATCHINGAGENT_A2A_URL: http://matching-agent:8102/a2a
+      MCP_URL: http://mcp:8001/mcp
+      OTEL_SERVICE_NAME: matching-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8102", "9464"]
+    depends_on: [mcp, backend, jaeger]
+
+  location-agent:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8103", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: location
+      LOCATIONAGENT_A2A_URL: http://location-agent:8103/a2a
+      MCP_URL: http://mcp:8001/mcp
+      OTEL_SERVICE_NAME: location-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8103", "9464"]
+    depends_on: [mcp, backend, jaeger]
+
+  notification-agent:
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8104", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: notification
+      NOTIFICATIONAGENT_A2A_URL: http://notification-agent:8104/a2a
+      MCP_URL: http://mcp:8001/mcp
+      OTEL_SERVICE_NAME: notification-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8104", "9464"]
+    depends_on: [mcp, backend, jaeger]
+
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: {context: ., dockerfile: Dockerfile}
     container_name: blood_coordination_backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     environment:
-      - APP_NAME=Blood Donation Matching & Emergency Coordination System
-      - ENVIRONMENT=production
-      - DATABASE_URL=sqlite:///./data/blood_donation.db
-      - ROUTING_PROVIDER=haversine
-      - LLM_PROVIDER=builtin
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
-    volumes:
-      - blood_data:/app/data
+      <<: *app_environment
+      APP_NAME: Blood Donation Matching & Emergency Coordination System
+      ENVIRONMENT: production
+      DATABASE_URL: sqlite:////app/data/blood_donation.db
+      ROUTING_PROVIDER: ${ROUTING_PROVIDER:-haversine}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-20}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      REQUIREMENTAGENT_BASE_URL: http://requirement-agent:8101
+      MATCHINGAGENT_BASE_URL: http://matching-agent:8102
+      LOCATIONAGENT_BASE_URL: http://location-agent:8103
+      OTEL_SERVICE_NAME: gateway
+    volumes: [blood_data:/app/data]
+    expose: ["9464"]
+    depends_on: [jaeger]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
@@ -24,16 +127,46 @@ services:
       retries: 3
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: {context: ./frontend, dockerfile: Dockerfile}
     container_name: blood_command_center_ui
     restart: unless-stopped
-    ports:
-      - "3000:80"
+    ports: ["3000:80"]
     depends_on:
-      backend:
-        condition: service_healthy
+      backend: {condition: service_healthy}
+
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:16686:16686"]
+    expose: ["4317", "4318"]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--web.enable-lifecycle"]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on: [backend, coordinator-agent, requirement-agent, matching-agent, location-agent, notification-agent, mcp]
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus, jaeger]
 
 volumes:
   blood_data:
+  prometheus_data:
+  grafana_data:

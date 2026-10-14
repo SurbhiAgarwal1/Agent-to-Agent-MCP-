@@ -38,7 +38,7 @@ class ConsoleNotificationProvider(BaseNotificationProvider):
             "status": "DELIVERED",
         }
         self.sent_notifications.append(record)
-        logger.info(f"[{record['channel']}] To: {record['recipient_type']} #{record['recipient_id']} | {title}: {message}")
+        logger.info("Notification dispatch attempted")
         return record
 
     def get_history(self) -> List[Dict[str, Any]]:

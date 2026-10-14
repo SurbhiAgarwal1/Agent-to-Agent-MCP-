@@ -32,7 +32,7 @@ def client():
         inv = BloodInventory(inventory_id=1, bank_id=1, blood_group="A+", units_available=5)
         seed_session.add_all([h, b, inv])
         seed_session.commit()
-        staff = make_user(seed_session, "frontend-staff@example.com", UserRole.HOSPITAL_STAFF)
+        staff = make_user(seed_session, "frontend-staff@example.com", UserRole.HOSPITAL_STAFF, hospital_ids=[1])
         staff_headers = auth_headers(staff)
 
     def override_get_db():

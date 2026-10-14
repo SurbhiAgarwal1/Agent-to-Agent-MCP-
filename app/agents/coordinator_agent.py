@@ -6,11 +6,16 @@ tracking the request through a formal state machine and persisting results to th
 """
 
 import uuid
+import asyncio
+import os
+import time
+from contextvars import ContextVar
 from contextlib import nullcontext
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.models.hospital import Hospital
 from app.models.blood_bank import BloodBank
@@ -28,6 +33,22 @@ from app.agents.notification_agent import NotificationAgent
 COORDINATOR_NAME = "CoordinatorAgent"
 from app.services.fulfillment_service import COORDINATION_LOCK, refresh_request_status
 from app.services.scarce_blood_policy import PENALTY_SCORE_POINTS, conservation_factor
+from app.llm.client import record_usage
+from app.llm.reasoners import (
+    LLMReasoner,
+    MockReasoner,
+    ReasonerError,
+    create_reasoner,
+)
+from app.llm.schemas import BloodRequestPlan
+from opentelemetry import trace
+from app.observability.tracing import (
+    LLM_DURATION, LLM_ERRORS, LLM_INPUT_TOKENS, LLM_OUTPUT_TOKENS, LLM_REQUESTS,
+    LLM_TOTAL_TOKENS, WORKFLOWS, WORKFLOW_DURATION, WORKFLOW_ERRORS,
+)
+
+_WORKFLOW_ACTIVE: ContextVar[bool] = ContextVar("workflow_active", default=False)
+_TRACER = trace.get_tracer("app.coordinator")
 
 
 class CoordinatorState(str, Enum):
@@ -47,6 +68,8 @@ class CoordinatorAgent:
         self,
         db: Optional[Session] = None,
         bus: Optional[MessageBus] = None,
+        network: bool = False,
+        reasoner: Optional[LLMReasoner] = None,
     ):
         """Initialize Coordinator Agent.
         
@@ -55,23 +78,173 @@ class CoordinatorAgent:
             bus: Optional MessageBus instance for A2A communication.
         """
         self.db = db
-        self.bus = bus or MessageBus(hub=COORDINATOR_NAME)
-        if self.bus.hub is None:
-            self.bus.hub = COORDINATOR_NAME  # agents may only talk to the Coordinator
-        self.req_agent = RequirementAgent(db=self.db, bus=self.bus)
-        self.match_agent = MatchingAgent(db=self.db, bus=self.bus)
-        self.loc_agent = LocationAgent(bus=self.bus)
-        self.notif_agent = NotificationAgent(bus=self.bus)
-        self.bus.register_agent("RequirementAgent", self.req_agent.handle_a2a_message)
-        self.bus.register_agent("MatchingAgent", self.match_agent.handle_a2a_message)
-        self.bus.register_agent("LocationAgent", self.loc_agent.handle_a2a_message)
-        self.bus.register_agent("NotificationAgent", self.notif_agent.handle_a2a_message)
+        self.network = network
+        self.reasoner = reasoner or create_reasoner()
+        self._network_trace = {}
+        self.bus = None if network else (bus or MessageBus(hub=COORDINATOR_NAME))
+        if self.bus is not None:
+            if self.bus.hub is None:
+                self.bus.hub = COORDINATOR_NAME
+            self.req_agent = RequirementAgent(db=self.db, bus=self.bus)
+            self.match_agent = MatchingAgent(db=self.db, bus=self.bus)
+            self.loc_agent = LocationAgent(bus=self.bus)
+            self.notif_agent = NotificationAgent(bus=self.bus)
+            self.bus.register_agent("RequirementAgent", self.req_agent.handle_a2a_message)
+            self.bus.register_agent("MatchingAgent", self.match_agent.handle_a2a_message)
+            self.bus.register_agent("LocationAgent", self.loc_agent.handle_a2a_message)
+            self.bus.register_agent("NotificationAgent", self.notif_agent.handle_a2a_message)
+
+    def generate_plan(self, user_request: str) -> tuple[BloodRequestPlan, Dict[str, Any]]:
+        """Use the configured provider and validate its untrusted structured output."""
+        started = time.perf_counter()
+        provider = "mock" if isinstance(self.reasoner, MockReasoner) else "gemini"
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash") if provider == "gemini" else "deterministic-mock"
+        attrs = {"provider": provider, "model": model}
+        status = "error"
+        with _TRACER.start_as_current_span("llm.generate", attributes=attrs, record_exception=False, set_status_on_exception=False) as span:
+            try:
+                result = self._generate_plan(user_request)
+                status = "success"
+                metadata = result[1]
+                provider = str(metadata.get("provider", provider))
+                model = str(metadata.get("model", model))
+                attrs = {"provider": provider, "model": model}
+                span.set_attribute("llm.provider", provider)
+                span.set_attribute("llm.model", model)
+                LLM_REQUESTS.add(1, {**attrs, "status": "success"})
+                if metadata.get("fallback_used"):
+                    failed_provider = "gemini" if provider == "mock" else "unknown"
+                    LLM_REQUESTS.add(1, {"provider": failed_provider, "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "status": "error"})
+                    LLM_ERRORS.add(1, {"provider": failed_provider, "model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), "status": "fallback"})
+                usage = metadata.get("usage", {})
+                if isinstance(usage, dict) and not usage.get("is_mock"):
+                    for key, instrument in (("input_tokens", LLM_INPUT_TOKENS), ("output_tokens", LLM_OUTPUT_TOKENS), ("total_tokens", LLM_TOTAL_TOKENS)):
+                        value = usage.get(key)
+                        if isinstance(value, int) and value >= 0:
+                            instrument.add(value, attrs)
+                elif provider == "mock":
+                    for instrument in (LLM_INPUT_TOKENS, LLM_OUTPUT_TOKENS, LLM_TOTAL_TOKENS):
+                        instrument.add(0, attrs)
+                return result
+            except Exception as exc:
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                span.set_attribute("error.type", type(exc).__name__)
+                LLM_ERRORS.add(1, {**attrs, "status": "error"})
+                LLM_REQUESTS.add(1, {**attrs, "status": "error"})
+                raise
+            finally:
+                LLM_DURATION.record((time.perf_counter() - started) * 1000, {**attrs, "status": status})
+
+    def _generate_plan(self, user_request: str) -> tuple[BloodRequestPlan, Dict[str, Any]]:
+        try:
+            generated = self.reasoner.generate_plan(user_request)
+        except ReasonerError:
+            fallback = os.getenv("LLM_FALLBACK_PROVIDER", "").strip().lower()
+            if fallback not in {"mock", "dummy"} or isinstance(self.reasoner, MockReasoner):
+                raise
+            generated = MockReasoner().generate_plan(user_request).model_copy(update={"fallback_used": True})
+
+        record_usage(generated.usage)
+        try:
+            plan = BloodRequestPlan.model_validate(generated.plan)
+        except ValidationError as exc:
+            raise ValueError(f"LLM returned an invalid blood request plan: {exc}") from exc
+        metadata = {
+            "provider": generated.provider,
+            "model": generated.model,
+            "usage": generated.usage,
+            "fallback_used": generated.fallback_used,
+        }
+        return plan, metadata
+
+    def coordinate_text(
+        self,
+        user_request: str,
+        *,
+        persist: bool = False,
+        request_id: Optional[int] = None,
+        allowed_hospital_ids: Optional[set[int]] = None,
+    ) -> Dict[str, Any]:
+        """Plan a natural-language request, then execute only via the existing Coordinator workflow."""
+        return self._run_workflow(lambda: self._coordinate_text(
+            user_request, persist=persist, request_id=request_id, allowed_hospital_ids=allowed_hospital_ids
+        ))
+
+    def _coordinate_text(self, user_request: str, *, persist: bool, request_id: Optional[int],
+                         allowed_hospital_ids: Optional[set[int]] = None) -> Dict[str, Any]:
+        plan, _llm_metadata = self.generate_plan(user_request)
+        missing = []
+        if not plan.blood_group:
+            missing.append("blood group")
+        if not plan.units_required:
+            missing.append("number of units")
+        if not plan.location:
+            missing.append("hospital or location")
+        if missing:
+            return {
+                "success": False,
+                "status": "NEEDS_CLARIFICATION",
+                "missing_fields": missing,
+                "clarification_question": "Please provide the " + " and ".join(missing) + ".",
+                "plan": plan.model_dump(mode="json"),
+            }
+
+        hospital = None
+        if self.db is not None:
+            needle = f"%{plan.location}%"
+            hospital = self.db.query(Hospital).filter(
+                (Hospital.name.ilike(needle)) | (Hospital.address.ilike(needle))
+            ).first()
+        if hospital is None:
+            return {
+                "success": False,
+                "status": "NEEDS_CLARIFICATION",
+                "missing_fields": ["registered hospital matching the requested location"],
+                "clarification_question": f"I couldn't match '{plan.location}' to a registered hospital. Please specify one.",
+                "plan": plan.model_dump(mode="json"),
+            }
+        if allowed_hospital_ids is not None and hospital.hospital_id not in allowed_hospital_ids:
+            return {"success": False, "status": "FORBIDDEN", "failed_at": "AUTHORIZATION",
+                    "error": "Active membership in the requested hospital is required.",
+                    "hospital_id": hospital.hospital_id}
+
+        request_payload = {
+            "request_id": request_id or 999,
+            "hospital_id": hospital.hospital_id,
+            "hospital_name": hospital.name,
+            "hospital_address": hospital.address,
+            "hospital_latitude": hospital.latitude,
+            "hospital_longitude": hospital.longitude,
+            "blood_group": plan.blood_group,
+            "units_required": plan.units_required,
+            "urgency": plan.urgency.value,
+        }
+        result = self.coordinate(request_payload, persist=persist)
+        return {**result, "plan": plan.model_dump(mode="json")}
 
     def _ask(self, receiver: str, message_type: str, payload: Dict[str, Any], correlation_id: str):
         """Send a request to an agent over the A2A bus and return (reply_payload, error_reply).
 
         Exactly one of the two is None. Agent crashes and refusals arrive as A2A_ERROR replies.
         """
+        if self.network:
+            ports = {"RequirementAgent": 8101, "MatchingAgent": 8102, "LocationAgent": 8103, "NotificationAgent": 8104}
+            try:
+                from app.agents.a2a.client import call_remote_agent
+                reply_payload = asyncio.run(call_remote_agent(receiver.upper(), payload, port=ports[receiver], operation=message_type))
+                self._network_trace.setdefault(correlation_id, []).extend([
+                    {"message_id": uuid.uuid4().hex, "sender": COORDINATOR_NAME, "receiver": receiver,
+                     "type": message_type, "correlation_id": correlation_id, "timestamp": datetime.now(timezone.utc).isoformat()},
+                    {"message_id": uuid.uuid4().hex, "sender": receiver, "receiver": COORDINATOR_NAME,
+                     "type": message_type + ".response", "correlation_id": correlation_id, "timestamp": datetime.now(timezone.utc).isoformat()},
+                ])
+                if reply_payload.get("success") is False:
+                    raise RuntimeError(reply_payload.get("error", f"{receiver} reported failure"))
+                return reply_payload, None
+            except Exception as exc:
+                error = A2AMessage.create(sender_agent=receiver, receiver_agent=COORDINATOR_NAME,
+                    message_type=A2AMessageType.A2A_ERROR, payload={"error": str(exc)}, correlation_id=correlation_id)
+                return None, error
         reply = self.bus.send(A2AMessage.create(
             sender_agent=COORDINATOR_NAME,
             receiver_agent=receiver,
@@ -85,6 +258,8 @@ class CoordinatorAgent:
 
     def _trace(self, correlation_id: str) -> List[Dict[str, Any]]:
         """Summaries of every A2A message exchanged for this correlation id."""
+        if self.network:
+            return self._network_trace.get(correlation_id, [])
         return [
             {
                 "message_id": m.message_id,
@@ -230,11 +405,43 @@ class CoordinatorAgent:
         When persisting, matching -> reservation runs under one lock so two requests
         cannot reserve the same units at the same moment.
         """
+        return self._run_workflow(lambda: self._coordinate_public(request_input, correlation_id, persist))
+
+    def _coordinate_public(self, request_input, correlation_id, persist):
         guard = COORDINATION_LOCK if (persist and self.db is not None) else nullcontext()
         with guard:
             result = self._coordinate(request_input, correlation_id, persist)
         result["a2a_trace"] = self._trace(result.get("correlation_id"))
         return result
+
+    def _run_workflow(self, operation):
+        """Measure one logical workflow even when text planning calls coordinate()."""
+        if _WORKFLOW_ACTIVE.get():
+            return operation()
+        token = _WORKFLOW_ACTIVE.set(True)
+        started = time.perf_counter()
+        status = "error"
+        try:
+            with _TRACER.start_as_current_span("workflow.coordinate", record_exception=False, set_status_on_exception=False) as span:
+                try:
+                    result = operation()
+                    succeeded = isinstance(result, dict) and result.get("success") is True
+                    status = "success" if succeeded else "error"
+                    WORKFLOWS.add(1, {"status": status})
+                    if not succeeded:
+                        WORKFLOW_ERRORS.add(1, {"status": status})
+                        span.set_status(trace.Status(trace.StatusCode.ERROR))
+                    return result
+                except Exception as exc:
+                    span.set_status(trace.Status(trace.StatusCode.ERROR))
+                    span.set_attribute("error.type", type(exc).__name__)
+                    WORKFLOWS.add(1, {"status": "error"})
+                    WORKFLOW_ERRORS.add(1, {"status": "error"})
+                    raise
+                finally:
+                    WORKFLOW_DURATION.record((time.perf_counter() - started) * 1000, {"status": status})
+        finally:
+            _WORKFLOW_ACTIVE.reset(token)
 
     def _coordinate(
         self,

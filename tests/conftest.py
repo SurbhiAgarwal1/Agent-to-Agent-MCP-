@@ -15,7 +15,7 @@ from app.models.user import User
 from app.auth.utils import hash_password, create_access_token
 
 
-def make_user(db, email, role, password="Passw0rd!x"):
+def make_user(db, email, role, password="Passw0rd!x", *, hospital_ids=(), bank_ids=()):
     """Insert a user directly into the database using hash_password and return it."""
     user = User(
         email=email,
@@ -25,6 +25,12 @@ def make_user(db, email, role, password="Passw0rd!x"):
     db.add(user)
     db.commit()
     db.refresh(user)
+    from app.models.membership import HospitalMembership, BloodBankMembership
+    db.add_all([HospitalMembership(user_id=user.id, hospital_id=org_id) for org_id in hospital_ids])
+    db.add_all([BloodBankMembership(user_id=user.id, bank_id=org_id) for org_id in bank_ids])
+    if hospital_ids or bank_ids:
+        db.commit()
+        db.refresh(user)
     return user
 
 
@@ -50,6 +56,13 @@ def db_session():
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def use_mock_llm_for_all_tests(monkeypatch):
+    """Prevent the test suite from ever selecting a live LLM provider."""
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.delenv("LLM_FALLBACK_PROVIDER", raising=False)
 
 
 @pytest.fixture

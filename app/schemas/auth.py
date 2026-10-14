@@ -15,7 +15,7 @@ class UserCreate(BaseModel):
     """User creation payload for admin user management endpoint."""
     email: str = Field(..., description="Unique email address")
     password: str = Field(..., min_length=6, description="Password with min 6 characters")
-    role: str = Field(..., description="Role: HOSPITAL_STAFF, BLOOD_BANK_STAFF, ADMIN")
+    role: str = Field(..., description="Role: USER, HOSPITAL_STAFF, BLOOD_BANK_STAFF, ADMIN")
 
 
 class UserLogin(BaseModel):
@@ -37,3 +37,8 @@ class UserResponse(BaseModel):
     id: int
     email: str
     role: str
+
+
+class MembershipGrant(BaseModel):
+    organization_id: int = Field(gt=0)
+    membership_type: str = Field(default="STAFF", min_length=1, max_length=40)

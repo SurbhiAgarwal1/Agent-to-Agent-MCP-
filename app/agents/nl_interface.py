@@ -1,192 +1,144 @@
-"""Natural Language Interface Agent for Emergency Dispatch (Part 14).
+"""Natural language intake routed through the Coordinator's LLM plan interface."""
 
-Parses free-text emergency requests into structured entities, passes them
-strictly through validated MCP tools / Coordinator Agent pipeline, and
-synthesizes human-readable natural language operational summaries.
-"""
+from typing import Any, Dict, Optional
 
-import os
-import re
-from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
-from app.models.hospital import Hospital
 from app.agents.coordinator_agent import CoordinatorAgent
-from app.llm.prompt_templates import EXTRACTION_SYSTEM_PROMPT
+from app.llm.reasoners import LLMReasoner, create_reasoner
 
 
 class NLInterfaceAgent:
-    """Agent that translates natural-language dispatch text to coordinated actions."""
+    """Translate user text into a validated Coordinator plan and final response."""
 
-    VALID_BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
-
-    def __init__(self, db: Optional[Session] = None):
-        """Initialize the Natural-Language Interface Agent.
-        
-        Args:
-            db: Optional active database session for hospital resolution and persistence.
-        """
+    def __init__(
+        self,
+        db: Optional[Session] = None,
+        network: bool = False,
+        reasoner: Optional[LLMReasoner] = None,
+    ) -> None:
         self.db = db
-        self.llm_provider = os.getenv("LLM_PROVIDER", "builtin").strip().lower()
+        self.network = network
+        self.reasoner = reasoner or create_reasoner()
 
     def parse_text(self, text: str) -> Dict[str, Any]:
-        """Extract structured blood request fields from free-form text.
-        
-        Uses semantic extraction with strict ambiguity detection.
-        Never guesses missing vital clinical parameters.
-        """
+        """Return validated structured fields or a safe clarification request."""
         if not text or not text.strip():
-            return {
-                "success": False,
-                "is_ambiguous": True,
-                "clarification_question": "Please provide the details of your blood request (e.g. 'We urgently need 3 units of O+ at City Hospital').",
-                "extracted": {},
-            }
+            return self._clarification({}, ["blood group", "number of units", "hospital or location"])
+        try:
+            coordinator = CoordinatorAgent(db=self.db, network=self.network, reasoner=self.reasoner)
+            plan, metadata = coordinator.generate_plan(text)
+        except (ValueError, RuntimeError) as exc:
+            return {"success": False, "is_ambiguous": True, "error": str(exc), "extracted": {}}
 
-        text_clean = text.strip()
+        extracted = plan.model_dump(mode="json")
+        missing = []
+        if not plan.blood_group:
+            missing.append("blood group")
+        if not plan.units_required:
+            missing.append("number of units")
+        if not plan.location:
+            missing.append("hospital or location")
+        if missing:
+            return self._clarification(extracted, missing, metadata)
 
-        # 1. Extract Blood Group
-        bg_match = re.search(r"\b(AB|A|B|O)\s*([+-])(?!\w)", text_clean, re.IGNORECASE)
-        blood_group = (bg_match.group(1).upper() + bg_match.group(2)) if bg_match else None
-
-        # 2. Extract Units Required
-        units_match = re.search(r"(\d+)\s*(?:units?|bags?|pints?|packs?)", text_clean, re.IGNORECASE)
-        units_required = int(units_match.group(1)) if units_match else None
-
-        if units_required is None:
-            # Fallback for standalone digit near blood group
-            digit_match = re.search(r"(?:need|request|want)\s*(\d+)", text_clean, re.IGNORECASE)
-            if digit_match:
-                units_required = int(digit_match.group(1))
-
-        # 3. Extract Urgency
-        urgency = "MEDIUM"
-        if re.search(r"\b(critical|stat|code blue|immediately)\b", text_clean, re.IGNORECASE):
-            urgency = "CRITICAL"
-        elif re.search(r"\b(urgent|urgently|emergency|asap|rush)\b", text_clean, re.IGNORECASE):
-            urgency = "HIGH"
-        elif re.search(r"\b(routine|low|scheduled)\b", text_clean, re.IGNORECASE):
-            urgency = "LOW"
-
-        # 4. Extract Hospital
-        hospital_id = 1  # Default benchmark hospital
-        hospital_name = "General Hospital"
-        hosp_match = re.search(r"(?:at|for|to)\s+([A-Za-z0-9\s]+?)(?:hospital|clinic|center|medical)", text_clean, re.IGNORECASE)
-        if hosp_match:
-            candidate_name = (hosp_match.group(1) + " Hospital").strip()
-            if self.db:
-                found_hosp = self.db.query(Hospital).filter(
-                    Hospital.name.ilike(f"%{hosp_match.group(1).strip()}%")
-                ).first()
-                if found_hosp:
-                    hospital_id = found_hosp.hospital_id
-                    hospital_name = found_hosp.name
-                else:
-                    hospital_name = candidate_name
-
-        # 5. Check Ambiguity & Completeness
-        missing_fields = []
-        if not blood_group:
-            missing_fields.append("blood group (e.g. O+, A-)")
-        if not units_required:
-            missing_fields.append("number of units required")
-
-        if missing_fields:
-            question = f"Could you please clarify the {' and '.join(missing_fields)} for this request?"
-            return {
-                "success": False,
-                "is_ambiguous": True,
-                "clarification_question": question,
-                "extracted": {
-                    "hospital_id": hospital_id,
-                    "hospital_name": hospital_name,
-                    "blood_group": blood_group,
-                    "units_required": units_required,
-                    "urgency": urgency,
-                },
-            }
-
+        hospital = self._find_hospital(plan.location)
+        if hospital is None:
+            return self._clarification(
+                extracted,
+                ["registered hospital matching the requested location"],
+                metadata,
+                question=f"I couldn't match '{plan.location}' to a registered hospital. Please specify one.",
+            )
+        extracted.update({"hospital_id": hospital.hospital_id, "hospital_name": hospital.name})
         return {
             "success": True,
             "is_ambiguous": False,
             "clarification_question": None,
-            "extracted": {
-                "hospital_id": hospital_id,
-                "hospital_name": hospital_name,
-                "blood_group": blood_group,
-                "units_required": units_required,
-                "urgency": urgency,
-            },
+            "extracted": extracted,
+            "plan": plan.model_dump(mode="json"),
+            "llm": metadata,
         }
 
-    def process_request(self, text: str) -> Dict[str, Any]:
-        """Execute full end-to-end natural language request pipeline.
-        
-        Workflow:
-            1. Parse free text.
-            2. If ambiguous -> halt safely and return clarification question.
-            3. Route through CoordinatorAgent for validation, matching, and location.
-            4. Synthesize natural-language operational response summary.
-        """
-        parse_res = self.parse_text(text)
-        if parse_res["is_ambiguous"]:
+    def _find_hospital(self, location: str):
+        if self.db is None:
+            return None
+        from sqlalchemy import or_
+        from app.models.hospital import Hospital
+
+        needle = f"%{location}%"
+        return self.db.query(Hospital).filter(
+            or_(Hospital.name.ilike(needle), Hospital.address.ilike(needle))
+        ).first()
+
+    @staticmethod
+    def _clarification(
+        extracted: dict,
+        missing: list[str],
+        metadata: dict | None = None,
+        question: str | None = None,
+    ) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "is_ambiguous": True,
+            "clarification_question": question or "Please provide the " + " and ".join(missing) + ".",
+            "missing_fields": missing,
+            "extracted": extracted,
+            "llm": metadata,
+        }
+
+    def process_request(self, text: str, *, allowed_hospital_ids: Optional[set[int]] = None) -> Dict[str, Any]:
+        """Plan natural-language input, then execute via Coordinator/A2A as configured."""
+        coordinator = CoordinatorAgent(db=self.db, network=self.network, reasoner=self.reasoner)
+        try:
+            result = coordinator.coordinate_text(text, persist=False, allowed_hospital_ids=allowed_hospital_ids)
+        except (ValueError, RuntimeError) as exc:
+            return {
+                "success": False,
+                "status": "PLANNING_ERROR",
+                "message": str(exc),
+                "extracted_fields": {},
+                "structured_result": None,
+            }
+
+        plan = result.get("plan", {})
+        extracted = dict(plan)
+        if plan.get("location"):
+            hospital = self._find_hospital(plan["location"])
+            if hospital:
+                extracted.update({"hospital_id": hospital.hospital_id, "hospital_name": hospital.name})
+
+        if result.get("status") == "NEEDS_CLARIFICATION":
             return {
                 "success": False,
                 "status": "NEEDS_CLARIFICATION",
-                "message": parse_res["clarification_question"],
-                "extracted_fields": parse_res["extracted"],
-                "structured_result": None,
-            }
-
-        extracted = parse_res["extracted"]
-
-        # Run through the Coordinator Agent (never bypass validation!)
-        coordinator = CoordinatorAgent(db=self.db)
-        coord_payload = {
-            "request_id": 999,
-            "hospital_id": extracted["hospital_id"],
-            "blood_group": extracted["blood_group"],
-            "units_required": extracted["units_required"],
-            "urgency": extracted["urgency"],
-        }
-
-        try:
-            coord_res = coordinator.coordinate(request_input=coord_payload, persist=False)
-        except Exception as exc:
-            return {
-                "success": False,
-                "status": "COORDINATION_ERROR",
-                "message": f"Coordination pipeline error: {exc}",
+                "message": result.get("clarification_question", "Please clarify the request."),
                 "extracted_fields": extracted,
                 "structured_result": None,
+                "llm": result.get("llm"),
             }
-
-        if not coord_res.get("success"):
-            summary_msg = f"Request for {extracted['units_required']} units of {extracted['blood_group']} could not be fulfilled: {coord_res.get('error')}."
+        if not result.get("success"):
             return {
                 "success": False,
                 "status": "FAILED",
-                "message": summary_msg,
+                "message": f"Request could not be fulfilled: {result.get('error')}.",
                 "extracted_fields": extracted,
-                "structured_result": coord_res,
+                "structured_result": result,
             }
 
-        # Synthesize natural language summary from structured result
-        plan = coord_res.get("fulfillment_plan", {})
-        plan_status = plan.get("status", "COMPLETED")
-        total_units = plan.get("total_units", 0)
-        sources_count = len(plan.get("plan", []))
-
-        summary_msg = (
-            f"Successfully processed request for {extracted['hospital_name']}: "
-            f"{total_units}/{extracted['units_required']} units of {extracted['blood_group']} secured "
-            f"across {sources_count} source(s). Plan status: {plan_status}."
+        plan_result = result.get("fulfillment_plan", {})
+        total_units = plan_result.get("total_units", 0)
+        units_required = result.get("requirement", {}).get("units_required", 0)
+        sources_count = len(plan_result.get("plan", []))
+        summary = (
+            f"Successfully processed request for {plan.get('location')}: "
+            f"{total_units}/{units_required} units of {plan.get('blood_group')} secured "
+            f"across {sources_count} source(s). Plan status: {plan_result.get('status', 'COMPLETED')}."
         )
-
         return {
             "success": True,
-            "status": plan_status,
-            "message": summary_msg,
+            "status": plan_result.get("status", "COMPLETED"),
+            "message": summary,
             "extracted_fields": extracted,
-            "structured_result": coord_res,
+            "structured_result": result,
         }

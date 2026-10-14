@@ -21,7 +21,7 @@ def world(client, db_session):
     db_session.add(BloodInventory(bank_id=1, blood_group="A+", units_available=5,
                                   expiry_date=date.today() + timedelta(days=9)))
     db_session.commit()
-    staff = make_user(db_session, "nurse@h1.test", UserRole.HOSPITAL_STAFF)
+    staff = make_user(db_session, "nurse@h1.test", UserRole.HOSPITAL_STAFF, hospital_ids=[1])
     client.headers.update(auth_headers(staff))
     rid = client.post("/api/v1/blood-requests",
                       json={"hospital_id": 1, "blood_group": "A+", "units_required": 2, "urgency": "HIGH"}

@@ -145,9 +145,7 @@ class RealRoutingProvider(RoutingProvider):
                 return self.fallback.route(origin_lat, origin_lon, dest_lat, dest_lon)
 
         except Exception as exc:
-            logger.warning(
-                f"Real routing service request failed ({exc}). Falling back to Haversine."
-            )
+            logger.warning("Real routing request failed (%s); using configured fallback", type(exc).__name__)
             fallback_res = self.fallback.route(origin_lat, origin_lon, dest_lat, dest_lon)
             fallback_res["fallback_reason"] = str(exc)
             return fallback_res

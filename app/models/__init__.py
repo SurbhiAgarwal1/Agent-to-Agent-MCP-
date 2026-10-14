@@ -15,6 +15,7 @@ from app.models.blood_request import BloodRequest
 from app.models.match import Match
 from app.models.user import User, UserRole
 from app.models.audit_log import AuditLog
+from app.models.membership import HospitalMembership, BloodBankMembership
 
 __all__ = [
     "BloodGroup",
@@ -31,4 +32,6 @@ __all__ = [
     "User",
     "UserRole",
     "AuditLog",
+    "HospitalMembership",
+    "BloodBankMembership",
 ]

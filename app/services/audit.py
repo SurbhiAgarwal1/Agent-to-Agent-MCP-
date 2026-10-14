@@ -43,5 +43,5 @@ def record_audit_log(
     db.add(log_entry)
     db.commit()
     db.refresh(log_entry)
-    logger.info(f"[AUDIT] User #{user_id} performed '{action}' on {resource} #{resource_id}")
+    logger.info("Audit event recorded")
     return log_entry

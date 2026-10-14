@@ -69,7 +69,7 @@ def handle_validate_blood_request(
 
     agent = RequirementAgent(db=db)
     payload = dict(arguments)
-    if "request_id" not in payload:
+    if payload.get("request_id") is None:
         payload["request_id"] = 1
 
     return agent.process(payload)

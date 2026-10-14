@@ -26,6 +26,13 @@ from app.mcp.tools.location_tool import (
     OUTPUT_SCHEMA as LOCATION_OUTPUT_SCHEMA,
     handle_calculate_distance,
 )
+from app.mcp.tools.notification_tool import (
+    TOOL_NAME as NOTIFICATION_TOOL_NAME,
+    TOOL_DESCRIPTION as NOTIFICATION_TOOL_DESC,
+    INPUT_SCHEMA as NOTIFICATION_INPUT_SCHEMA,
+    OUTPUT_SCHEMA as NOTIFICATION_OUTPUT_SCHEMA,
+    handle_dispatch_notifications,
+)
 
 
 @dataclass
@@ -145,6 +152,16 @@ def create_default_mcp_server() -> MCPServer:
             input_schema=LOCATION_INPUT_SCHEMA,
             output_schema=LOCATION_OUTPUT_SCHEMA,
             handler=handle_calculate_distance,
+        )
+    )
+
+    server.register_tool(
+        MCPTool(
+            name=NOTIFICATION_TOOL_NAME,
+            description=NOTIFICATION_TOOL_DESC,
+            input_schema=NOTIFICATION_INPUT_SCHEMA,
+            output_schema=NOTIFICATION_OUTPUT_SCHEMA,
+            handler=handle_dispatch_notifications,
         )
     )
 

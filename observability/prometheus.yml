@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: gateway
+    static_configs: [{targets: ["backend:9464"]}]
+  - job_name: coordinator-agent
+    static_configs: [{targets: ["coordinator-agent:9464"]}]
+  - job_name: requirement-agent
+    static_configs: [{targets: ["requirement-agent:9464"]}]
+  - job_name: matching-agent
+    static_configs: [{targets: ["matching-agent:9464"]}]
+  - job_name: location-agent
+    static_configs: [{targets: ["location-agent:9464"]}]
+  - job_name: notification-agent
+    static_configs: [{targets: ["notification-agent:9464"]}]
+  - job_name: mcp-server
+    static_configs: [{targets: ["mcp:9464"]}]

@@ -5,8 +5,6 @@ from typing import Callable, Dict, List, Optional
 from app.agents.a2a.message import A2AMessage, A2AMessageType
 
 logger = logging.getLogger("app.agents.a2a.bus")
-if not logger.handlers:
-    logging.basicConfig(level=logging.INFO)
 
 
 class MessageBus:
@@ -32,7 +30,7 @@ class MessageBus:
             handler: Callable taking an incoming A2AMessage and returning an A2AMessage.
         """
         self._handlers[agent_name] = handler
-        logger.info(f"[A2A Bus] Registered agent: '{agent_name}'")
+        logger.info("A2A compatibility handler registered")
 
     def unregister_agent(self, agent_name: str) -> None:
         """Unregister an agent from the bus."""
@@ -46,10 +44,7 @@ class MessageBus:
         """
         # Audit log the outbound message
         self._message_log.append(message)
-        logger.info(
-            f"[A2A SEND] [{message.correlation_id}] {message.sender_agent} -> {message.receiver_agent} "
-            f"| Type: {message.message_type} | MsgID: {message.message_id}"
-        )
+        logger.info("A2A compatibility message routed")
 
         receiver = message.receiver_agent
         if self.hub and self.hub not in (message.sender_agent, receiver):
@@ -57,7 +52,7 @@ class MessageBus:
                 f"Direct agent-to-agent message {message.sender_agent} -> {receiver} refused: "
                 f"all traffic must go through '{self.hub}'."
             )
-            logger.error(f"[A2A ERROR] {err_msg}")
+            logger.warning("A2A compatibility route rejected")
             error_response = message.create_error(
                 sender_agent="MessageBus",
                 error_message=err_msg,
@@ -68,7 +63,7 @@ class MessageBus:
 
         if receiver not in self._handlers:
             err_msg = f"Receiver agent '{receiver}' is not registered on the message bus."
-            logger.error(f"[A2A ERROR] {err_msg}")
+            logger.warning("A2A compatibility recipient unavailable")
             error_response = message.create_error(
                 sender_agent="MessageBus",
                 error_message=err_msg,
@@ -79,13 +74,11 @@ class MessageBus:
 
         handler = self._handlers[receiver]
         try:
-            logger.info(
-                f"[A2A RECV] [{message.correlation_id}] {receiver} processing message '{message.message_type}'"
-            )
+            logger.info("A2A compatibility handler executing")
             response = handler(message)
             if not isinstance(response, A2AMessage):
                 err_msg = f"Handler for '{receiver}' did not return an A2AMessage instance."
-                logger.error(f"[A2A ERROR] {err_msg}")
+                logger.warning("A2A compatibility handler returned an invalid response")
                 error_response = message.create_error(
                     sender_agent=receiver,
                     error_message=err_msg,
@@ -94,14 +87,11 @@ class MessageBus:
                 return error_response
 
             self._message_log.append(response)
-            logger.info(
-                f"[A2A RESP] [{response.correlation_id}] {response.sender_agent} -> {response.receiver_agent} "
-                f"| Type: {response.message_type} | MsgID: {response.message_id}"
-            )
+            logger.info("A2A compatibility handler completed")
             return response
 
         except Exception as exc:
-            logger.exception(f"[A2A EXCEPTION] Handler for '{receiver}' failed: {exc}")
+            logger.error("A2A compatibility handler failed (%s)", type(exc).__name__)
             error_response = message.create_error(
                 sender_agent=receiver,
                 error_message=f"Agent execution failed: {str(exc)}",

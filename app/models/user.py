@@ -2,15 +2,17 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.orm import relationship
 from app.database.session import Base
 
 
 class UserRole:
     """Allowed user authorization roles."""
+    USER = "USER"
     HOSPITAL_STAFF = "HOSPITAL_STAFF"
     BLOOD_BANK_STAFF = "BLOOD_BANK_STAFF"
     ADMIN = "ADMIN"
-    ALL_ROLES = [HOSPITAL_STAFF, BLOOD_BANK_STAFF, ADMIN]
+    ALL_ROLES = [USER, HOSPITAL_STAFF, BLOOD_BANK_STAFF, ADMIN]
 
 
 class User(Base):
@@ -22,3 +24,5 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default=UserRole.HOSPITAL_STAFF)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    hospital_memberships = relationship("HospitalMembership", back_populates="user", cascade="all, delete-orphan")
+    blood_bank_memberships = relationship("BloodBankMembership", back_populates="user", cascade="all, delete-orphan")

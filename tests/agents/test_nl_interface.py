@@ -31,7 +31,7 @@ def client_with_data():
         inv = BloodInventory(inventory_id=1, bank_id=1, blood_group="A+", units_available=5)
         session.add_all([h, b, inv])
         from tests.conftest import make_user, auth_headers
-        user = make_user(session, "staff_nl@test.org", "HOSPITAL_STAFF")
+        user = make_user(session, "staff_nl@test.org", "HOSPITAL_STAFF", hospital_ids=[1])
 
     def override_get_db():
         db = TestingSession()

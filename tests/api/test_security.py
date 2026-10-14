@@ -28,7 +28,6 @@ PROTECTED_ENDPOINTS = [
     ("POST", "/api/v1/blood-requests/1/coordinate"),
     ("POST", "/api/v1/nl-request"),
     ("GET", "/api/v1/auth/audit-logs"),
-    ("GET", "/metrics"),
     ("POST", "/api/v1/auth/users"),
 ]
 
@@ -132,7 +131,7 @@ ROLE_MATRIX_CASES = [
     ("BLOOD_BANK_STAFF", "GET", "/api/v1/hospitals", True),
     ("ADMIN", "GET", "/api/v1/hospitals", True),
     ("HOSPITAL_STAFF", "GET", "/api/v1/blood-requests", True),
-    ("BLOOD_BANK_STAFF", "GET", "/api/v1/blood-requests", True),
+    ("BLOOD_BANK_STAFF", "GET", "/api/v1/blood-requests", False),
     ("ADMIN", "GET", "/api/v1/blood-requests", True),
 
     # HOSPITAL_STAFF or ADMIN only
@@ -161,9 +160,6 @@ ROLE_MATRIX_CASES = [
     ("HOSPITAL_STAFF", "GET", "/api/v1/auth/audit-logs", False),
     ("BLOOD_BANK_STAFF", "GET", "/api/v1/auth/audit-logs", False),
 
-    ("ADMIN", "GET", "/metrics", True),
-    ("HOSPITAL_STAFF", "GET", "/metrics", False),
-    ("BLOOD_BANK_STAFF", "GET", "/metrics", False),
 
     ("ADMIN", "POST", "/api/v1/auth/users", True),
     ("HOSPITAL_STAFF", "POST", "/api/v1/auth/users", False),
@@ -316,12 +312,12 @@ def test_admin_create_user_validations(client, db_session):
 # -----------------------------------------------------------------------------
 
 def test_admin_only_endpoints_enforcement(client, db_session):
-    """Verify GET /api/v1/auth/audit-logs and GET /metrics are strictly ADMIN only."""
+    """Verify the administrative audit route remains role-protected."""
     admin = make_user(db_session, "admin_audit@test.org", "ADMIN")
     staff = make_user(db_session, "staff_audit@test.org", "HOSPITAL_STAFF")
     bank = make_user(db_session, "bank_audit@test.org", "BLOOD_BANK_STAFF")
 
-    for path in ["/api/v1/auth/audit-logs", "/metrics"]:
+    for path in ["/api/v1/auth/audit-logs"]:
         # Anonymous -> 401
         assert client.get(path).status_code == 401
         # Non-admin roles -> 403
@@ -329,6 +325,15 @@ def test_admin_only_endpoints_enforcement(client, db_session):
         assert client.get(path, headers=auth_headers(bank)).status_code == 403
         # ADMIN -> 200
         assert client.get(path, headers=auth_headers(admin)).status_code == 200
+
+
+def test_observability_metrics_are_not_exposed_through_gateway(client, db_session):
+    """The admin-only observability UI/network is separate from the application API."""
+    admin = make_user(db_session, "observability-admin@test.org", "ADMIN")
+    staff = make_user(db_session, "observability-staff@test.org", "HOSPITAL_STAFF")
+    assert client.get("/metrics").status_code == 404
+    assert client.get("/metrics", headers=auth_headers(admin)).status_code == 404
+    assert client.get("/metrics", headers=auth_headers(staff)).status_code == 404
 
 
 # -----------------------------------------------------------------------------
@@ -408,8 +413,8 @@ def test_cors_preflight_headers(client):
 # I. End-to-End Multirole Workflow
 # -----------------------------------------------------------------------------
 
-def test_end_to_end_multirole_workflow(client, db_session):
-    """Verify full end-to-end workflow between HOSPITAL_STAFF and BLOOD_BANK_STAFF."""
+def test_multirole_request_access_boundary(client, db_session):
+    """Verify request ownership and role boundaries independent of remote services."""
     # Seed hospital & data needed for workflow
     from app.models.hospital import Hospital
     from app.models.blood_bank import BloodBank
@@ -422,7 +427,7 @@ def test_end_to_end_multirole_workflow(client, db_session):
     db_session.commit()
 
     # 1. Create users
-    hosp_staff = make_user(db_session, "hosp_staff@test.org", "HOSPITAL_STAFF", "Passw0rd!123")
+    hosp_staff = make_user(db_session, "hosp_staff@test.org", "HOSPITAL_STAFF", "Passw0rd!123", hospital_ids=[1])
     bank_staff = make_user(db_session, "bank_staff@test.org", "BLOOD_BANK_STAFF", "Passw0rd!123")
 
     # 2. HOSPITAL_STAFF logs in
@@ -445,11 +450,7 @@ def test_end_to_end_multirole_workflow(client, db_session):
     assert create_res.status_code == 201
     req_id = create_res.json()["request_id"]
 
-    # 4. HOSPITAL_STAFF runs /coordinate
-    coord_res = client.post(f"/api/v1/blood-requests/{req_id}/coordinate", headers=hosp_headers)
-    assert coord_res.status_code == 200
-
-    # 5. BLOOD_BANK_STAFF logs in
+    # 4. BLOOD_BANK_STAFF logs in
     login_bank = client.post(
         "/api/v1/auth/login",
         json={"email": "bank_staff@test.org", "password": "Passw0rd!123"},
@@ -458,9 +459,35 @@ def test_end_to_end_multirole_workflow(client, db_session):
     bank_token = login_bank.json()["access_token"]
     bank_headers = {"Authorization": f"Bearer {bank_token}"}
 
-    # 6. BLOOD_BANK_STAFF can GET the request and its matches
+    # Cross-organization access is not granted because no bank membership mapping exists yet.
     get_req_res = client.get(f"/api/v1/blood-requests/{req_id}", headers=bank_headers)
-    assert get_req_res.status_code == 200
+    assert get_req_res.status_code == 403
 
     get_matches_res = client.get(f"/api/v1/blood-requests/{req_id}/matches", headers=bank_headers)
-    assert get_matches_res.status_code == 200
+    assert get_matches_res.status_code == 403
+
+
+def test_blood_request_idor_is_concealed(client, db_session):
+    """A hospital staff account cannot retrieve or mutate another user's request."""
+    from app.models.hospital import Hospital
+    from app.models.blood_request import BloodRequest
+
+    hospital = Hospital(name="IDOR Test A", latitude=12, longitude=77, address="Test")
+    other_hospital = Hospital(name="IDOR Test B", latitude=12, longitude=78, address="Other")
+    db_session.add_all([hospital, other_hospital])
+    db_session.flush()
+    owner = make_user(db_session, "owner-idor@test.org", "HOSPITAL_STAFF", hospital_ids=[hospital.hospital_id])
+    other = make_user(db_session, "other-idor@test.org", "HOSPITAL_STAFF", hospital_ids=[other_hospital.hospital_id])
+    request = BloodRequest(
+        hospital_id=hospital.hospital_id, created_by_user_id=owner.id,
+        blood_group="O+", units_required=1, urgency="HIGH", status="PENDING",
+    )
+    db_session.add(request)
+    db_session.commit()
+    path = f"/api/v1/blood-requests/{request.request_id}"
+
+    assert client.get(path, headers=auth_headers(other)).status_code == 403
+    assert client.get(path + "/matches", headers=auth_headers(other)).status_code == 403
+    assert client.patch(path + "/status", json={"status": "CANCELLED"}, headers=auth_headers(other)).status_code == 403
+    assert client.post(path + "/coordinate", headers=auth_headers(other)).status_code == 403
+    assert client.post(path + "/orchestrate", headers=auth_headers(other)).status_code == 403

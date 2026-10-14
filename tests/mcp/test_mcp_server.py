@@ -82,15 +82,16 @@ def db_session():
 # -----------------------------------------------------------------------------
 
 def test_mcp_server_tool_registration_and_listing():
-    """Verify default MCP server registers and lists all three core tools."""
+    """Verify all deterministic and notification operations are registered."""
     server = create_default_mcp_server()
     tools = server.list_tools()
 
-    assert len(tools) == 3
+    assert len(tools) == 4
     tool_names = [t["name"] for t in tools]
     assert "validate_blood_request" in tool_names
     assert "find_blood_sources" in tool_names
     assert "calculate_distance" in tool_names
+    assert "dispatch_notifications" in tool_names
 
     # Check schema completeness for each tool
     for t in tools:
@@ -190,6 +191,21 @@ def test_mcp_tool_calculate_distance_success():
     assert "estimated_time" in res["data"]
 
 
+def test_mcp_notification_tool_preserves_existing_dispatch_behavior():
+    server = create_default_mcp_server()
+    result = server.invoke_tool("dispatch_notifications", {
+        "hospital_id": 1,
+        "request_id": 321,
+        "fulfillment_plan": {
+            "status": "UNFULFILLED", "total_units": 0,
+            "details": {"units_required": 1}, "plan": [],
+        },
+    })
+    assert result["isError"] is False
+    assert result["data"]["success"] is True
+    assert result["data"]["request_id"] == 321
+
+
 # -----------------------------------------------------------------------------
 # 4. Behavioral Parity (No Behavior Drift from Agents)
 # -----------------------------------------------------------------------------
@@ -244,7 +260,7 @@ def test_mcp_http_endpoints(db_session):
     res_list = client.get("/api/v1/mcp/tools")
     assert res_list.status_code == 200
     data_list = res_list.json()
-    assert len(data_list["tools"]) == 3
+    assert len(data_list["tools"]) == 4
 
     # 2. GET /api/v1/mcp/tools/{tool_name}
     res_desc = client.get("/api/v1/mcp/tools/calculate_distance")
