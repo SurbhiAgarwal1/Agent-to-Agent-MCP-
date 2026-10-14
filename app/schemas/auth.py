@@ -1,6 +1,6 @@
 """Pydantic schemas for authentication and tokens (Part 15)."""
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -37,6 +37,8 @@ class UserResponse(BaseModel):
     id: int
     email: str
     role: str
+    hospital_ids: List[int] = Field(default_factory=list)
+    bank_ids: List[int] = Field(default_factory=list)
 
 
 class MembershipGrant(BaseModel):
