@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
-import { registerApi } from '../api/auth';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
 
 export default function SignupPage() {
-  const { login } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState('HOSPITAL_STAFF');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -35,9 +33,9 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      await registerApi({ email, password, role });
-      // Auto-login upon successful registration
-      await login(email, password);
+      // Public self-registration is intentionally limited by the backend to
+      // HOSPITAL_STAFF. AuthContext owns the register -> login -> /auth/me flow.
+      await register(email, password, 'HOSPITAL_STAFF');
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err.message || 'Registration failed. The email may already be in use.');
@@ -81,7 +79,7 @@ export default function SignupPage() {
             Create an Account
           </h1>
           <p className="text-secondary" style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            Register as Hospital Staff or General Member
+            Register as Hospital Staff
           </p>
         </div>
 
@@ -113,17 +111,9 @@ export default function SignupPage() {
               <label className="form-label" htmlFor="signup-role">
                 Account Role
               </label>
-              <select
-                id="signup-role"
-                className="form-control"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="HOSPITAL_STAFF">Hospital Staff (Can manage hospital requests)</option>
-                <option value="USER">General Member</option>
-              </select>
+              <input id="signup-role" className="form-control" value="Hospital Staff" readOnly />
               <small className="text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>
-                Note: Hospital and Blood Bank memberships are granted by administrators after registration.
+                Public registration creates a HOSPITAL_STAFF account. Other roles are created by administrators.
               </small>
             </div>
 

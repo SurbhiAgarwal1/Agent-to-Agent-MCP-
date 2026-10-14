@@ -5,7 +5,6 @@ import { useAuth } from "../../hooks/useAuth.js";
 export function Sidebar({ isOpen, onClose }) {
   const { user } = useAuth();
   const role = user?.role || "USER";
-
   const isHospitalStaff = role === "HOSPITAL_STAFF" || role === "ADMIN";
   const isAdmin = role === "ADMIN";
 
@@ -24,25 +23,27 @@ export function Sidebar({ isOpen, onClose }) {
     marginBottom: "0.25rem",
   });
 
+  const telemetry = [
+    ["Grafana Dashboards", "📈", import.meta.env.VITE_GRAFANA_URL],
+    ["Jaeger Traces", "🔍", import.meta.env.VITE_JAEGER_URL],
+    ["Prometheus Status", "📊", import.meta.env.VITE_PROMETHEUS_URL],
+  ];
+
   return (
     <>
-      {/* Mobile Backdrop */}
       {isOpen && (
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.4)",
-            zIndex: 40,
-            display: "none",
-          }}
+        <button
+          type="button"
           className="mobile-backdrop"
+          aria-label="Close navigation"
+          onClick={onClose}
         />
       )}
 
       <aside
-        className={`sidebar ${isOpen ? "open" : ""}`}
+        id="app-sidebar"
+        className={`sidebar ${isOpen ? "open" : "collapsed"}`}
+        aria-label="Primary navigation"
         style={{
           width: "240px",
           backgroundColor: "var(--color-surface)",
@@ -52,6 +53,8 @@ export function Sidebar({ isOpen, onClose }) {
           flexDirection: "column",
           justifyContent: "space-between",
           flexShrink: 0,
+          overflow: "hidden",
+          transition: "width 200ms ease-in-out, padding 200ms ease-in-out",
         }}
       >
         <div>
@@ -69,31 +72,27 @@ export function Sidebar({ isOpen, onClose }) {
             >
               Operations
             </p>
+
             <NavLink to="/dashboard" style={navLinkStyle} onClick={onClose} end>
-              <span>📊</span>
-              <span>Dashboard</span>
+              <span>📊</span><span>Dashboard</span>
             </NavLink>
 
             {isHospitalStaff && (
               <>
                 <NavLink to="/blood-requests" style={navLinkStyle} onClick={onClose} end>
-                  <span>📋</span>
-                  <span>Blood Requests</span>
+                  <span>📋</span><span>Blood Requests</span>
                 </NavLink>
                 <NavLink to="/blood-requests/new" style={navLinkStyle} onClick={onClose}>
-                  <span>🚨</span>
-                  <span>Dispatch Request</span>
+                  <span>🩸</span><span>Request Blood</span>
                 </NavLink>
                 <NavLink to="/notifications" style={navLinkStyle} onClick={onClose}>
-                  <span>🔔</span>
-                  <span>Notifications</span>
+                  <span>🔔</span><span>Notifications</span>
                 </NavLink>
               </>
             )}
 
             <NavLink to="/profile" style={navLinkStyle} onClick={onClose}>
-              <span>👤</span>
-              <span>Profile</span>
+              <span>👤</span><span>Profile</span>
             </NavLink>
           </div>
 
@@ -112,21 +111,18 @@ export function Sidebar({ isOpen, onClose }) {
               >
                 Administration
               </p>
+
               <NavLink to="/admin" style={navLinkStyle} onClick={onClose} end>
-                <span>⚙️</span>
-                <span>Admin Overview</span>
+                <span>⚙️</span><span>Admin Overview</span>
               </NavLink>
               <NavLink to="/admin/users" style={navLinkStyle} onClick={onClose}>
-                <span>👥</span>
-                <span>User Management</span>
+                <span>👥</span><span>User Management</span>
               </NavLink>
               <NavLink to="/admin/memberships" style={navLinkStyle} onClick={onClose}>
-                <span>🏥</span>
-                <span>Memberships</span>
+                <span>🏥</span><span>Memberships</span>
               </NavLink>
               <NavLink to="/admin/audit-logs" style={navLinkStyle} onClick={onClose}>
-                <span>📜</span>
-                <span>Audit Logs</span>
+                <span>📜</span><span>Audit Logs</span>
               </NavLink>
 
               <p
@@ -141,72 +137,106 @@ export function Sidebar({ isOpen, onClose }) {
                   fontWeight: 600,
                 }}
               >
-                Operations Telemetry (Loopback)
+                Operations Telemetry
               </p>
-              <a
-                href="http://localhost:3001"
-                target="_blank"
-                rel="noreferrer"
-                style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
-              >
-                <span>📈</span>
-                <span>Grafana Dashboards ↗</span>
-              </a>
-              <a
-                href="http://localhost:16686"
-                target="_blank"
-                rel="noreferrer"
-                style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
-              >
-                <span>🔍</span>
-                <span>Jaeger Traces ↗</span>
-              </a>
-              <a
-                href="http://localhost:9090"
-                target="_blank"
-                rel="noreferrer"
-                style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
-              >
-                <span>📊</span>
-                <span>Prometheus Status ↗</span>
-              </a>
+
+              {telemetry.map(([label, icon, href]) =>
+                href ? (
+                  <a
+                    key={label}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
+                  >
+                    <span>{icon}</span><span>{label} ↗</span>
+                  </a>
+                ) : (
+                  <div
+                    key={label}
+                    style={{
+                      ...navLinkStyle({ isActive: false }),
+                      fontSize: "0.8rem",
+                      cursor: "default",
+                    }}
+                    aria-disabled="true"
+                  >
+                    <span>{icon}</span><span>{label} — Not configured</span>
+                  </div>
+                )
+              )}
             </div>
           )}
         </div>
 
-        <div
-          style={{
-            padding: "0.75rem",
-            backgroundColor: "var(--color-bg)",
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--color-border)",
-            fontSize: "0.75rem",
-            color: "var(--color-text-muted)",
-          }}
-        >
-          <p style={{ fontWeight: 600, color: "var(--color-text-secondary)" }}>
-            A2A Coordination Engine
-          </p>
-          <p>Multi-Agent Protocol v1.0</p>
-        </div>
+        {isAdmin && (
+          <div
+            style={{
+              padding: "0.75rem",
+              backgroundColor: "var(--color-bg)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--color-border)",
+              fontSize: "0.75rem",
+              color: "var(--color-text-muted)",
+            }}
+          >
+            <p style={{ fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              Agent Network
+            </p>
+            <p>A2A · MCP · System Operations</p>
+          </div>
+        )}
       </aside>
 
       <style>{`
+        .mobile-backdrop {
+          display: none;
+        }
+
         @media (max-width: 768px) {
           .mobile-backdrop {
-            display: block !important;
+            display: block;
+            position: fixed;
+            inset: 57px 0 0 0;
+            width: 100%;
+            height: calc(100vh - 57px);
+            border: 0;
+            padding: 0;
+            margin: 0;
+            background: rgba(15, 23, 42, 0.4);
+            z-index: 40;
+            cursor: pointer;
           }
+
           .sidebar {
             position: fixed !important;
             top: 57px;
             bottom: 0;
             left: 0;
+            width: 240px !important;
+            padding: 1.25rem 0.85rem !important;
             transform: translateX(-100%);
             transition: transform 200ms ease-in-out;
             z-index: 45;
+            overflow-y: auto !important;
+            overflow-x: hidden;
           }
+
           .sidebar.open {
             transform: translateX(0);
+          }
+
+          .sidebar.collapsed {
+            transform: translateX(-100%);
+          }
+        }
+
+        @media (min-width: 769px) {
+          .sidebar.collapsed {
+            width: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            border-right-width: 0 !important;
           }
         }
       `}</style>

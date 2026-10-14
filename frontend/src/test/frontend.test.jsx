@@ -430,11 +430,12 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
     expect(screen.queryByText('#102')).not.toBeInTheDocument();
   });
 
-  it('CreateBloodRequestPage submits a new blood request', async () => {
-    const { createBloodRequest } = await import('../api/bloodRequests.js');
-    const { listHospitals } = await import('../api/hospitals.js');
-    listHospitals.mockResolvedValue([{ hospital_id: 1, name: 'City Hospital', city: 'Central' }]);
-    createBloodRequest.mockResolvedValue({ request_id: 205 });
+  it('CreateBloodRequestPage renders the user-facing chat request flow', async () => {
+    const { processNlRequest } = await import('../api/bloodRequests.js');
+    processNlRequest.mockResolvedValue({
+      request_id: 205,
+      summary: 'Your request was received.',
+    });
 
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
@@ -448,15 +449,21 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
       </MemoryRouter>
     );
 
+    const input = screen.getByLabelText(/describe your blood requirement/i);
+    expect(input).toBeInTheDocument();
+
+    fireEvent.change(input, {
+      target: { value: 'We need 2 units of O+ blood urgently.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send blood request/i }));
+
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Lodge Blood Request/i })).toBeInTheDocument();
+      expect(processNlRequest).toHaveBeenCalledWith(
+        'We need 2 units of O+ blood urgently.'
+      );
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Lodge Blood Request/i }));
-
-    await waitFor(() => {
-      expect(createBloodRequest).toHaveBeenCalled();
-    });
+    expect(await screen.findByText('Your request was received.')).toBeInTheDocument();
   });
 
   it('BloodRequestDetailsPage renders details and triggers coordination', async () => {
@@ -470,6 +477,11 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
       status: 'PENDING',
     });
     getRequestMatches.mockResolvedValue({ matches: [] });
+    mockUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      user: { id: 1, email: 'admin@example.com', role: 'ADMIN', hospital_ids: [], bank_ids: [] },
+      loading: false,
+    });
     coordinateBloodRequest.mockResolvedValue({
       success: true,
       current_state: 'COMPLETED',
@@ -572,6 +584,10 @@ describe('5. Coordination Workflow & Match Fulfillment', () => {
 
 describe('6. Admin Governance & Audit Logs', () => {
   it('AdminDashboardPage provides navigation links to governance and telemetry', () => {
+    vi.stubEnv('VITE_GRAFANA_URL', 'https://grafana.example.test');
+    vi.stubEnv('VITE_JAEGER_URL', 'https://jaeger.example.test');
+    vi.stubEnv('VITE_PROMETHEUS_URL', 'https://prometheus.example.test');
+
     render(
       <MemoryRouter>
         <AdminDashboardPage />
@@ -644,7 +660,11 @@ describe('6. Admin Governance & Audit Logs', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/User Profile & Credentials/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Profile$/i })).toBeInTheDocument();
+    expect(screen.getByText('Account Details')).toBeInTheDocument();
+    expect(screen.getByText('Facility Access')).toBeInTheDocument();
+    expect(screen.getByText('Account Actions')).toBeInTheDocument();
+    expect(screen.queryByText(/session token/i)).not.toBeInTheDocument();
     expect(screen.getByText('dr.smith@metro.org')).toBeInTheDocument();
     expect(screen.getByText('Hospital #1')).toBeInTheDocument();
     expect(screen.getByText('Hospital #2')).toBeInTheDocument();

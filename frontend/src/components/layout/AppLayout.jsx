@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Navbar } from "./Navbar.jsx";
 import { Sidebar } from "./Sidebar.jsx";
@@ -8,16 +8,32 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { sessionExpiredMessage, clearExpiredMessage } = useAuth();
 
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-      <Navbar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
+      <Navbar
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        isSidebarOpen={sidebarOpen}
+      />
 
       {sessionExpiredMessage && (
         <div
           className="alert alert-warning"
           style={{ margin: "0.5rem 1.5rem 0", display: "flex", justifyContent: "space-between" }}
         >
-          <span>{sessionExpiredMessage}</span>
+          <span>{sessionExpiredMessage || 'Your session has expired. Please sign in again.'}</span>
           <button
             type="button"
             onClick={clearExpiredMessage}

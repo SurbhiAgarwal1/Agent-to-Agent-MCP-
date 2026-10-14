@@ -180,7 +180,7 @@ export default function DashboardPage() {
                         </td>
                         <td style={{ textAlign: 'right' }}>
                           <Link to={`/blood-requests/${req.request_id}`} className="btn btn-outline btn-sm">
-                            Coordinate &rarr;
+                            View Progress &rarr;
                           </Link>
                         </td>
                       </tr>
@@ -203,8 +203,7 @@ export default function DashboardPage() {
               : 'No active blood bank memberships assigned yet. Please contact an Administrator.'}
           </div>
           <p className="text-secondary" style={{ marginTop: '1rem', fontSize: '0.875rem' }}>
-            Blood bank inventory is queried autonomously by the multi-agent system via the Model Context Protocol (MCP)
-            when hospital emergency requests are lodged and coordinated.
+            Blood availability is checked when hospital emergency requests are submitted, helping staff find suitable sources.
           </p>
         </Card>
       ) : (

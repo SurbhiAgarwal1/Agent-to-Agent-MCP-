@@ -81,7 +81,7 @@ export default function LandingPage() {
             letterSpacing: '0.025em',
           }}
         >
-          AUTONOMOUS MULTI-AGENT COORDINATION
+          FAST, RELIABLE BLOOD COORDINATION
         </div>
 
         <h1
@@ -105,9 +105,7 @@ export default function LandingPage() {
             lineHeight: 1.6,
           }}
         >
-          An interoperable, protocol-engineered platform connecting hospitals, blood banks, and donors.
-          Autonomous agents validate clinical needs, match compatible units, compute proximity ETAs, and
-          reserve life-saving inventory in real time.
+          A secure healthcare platform that helps hospitals find compatible blood sources quickly, track requests, and coordinate fulfillment.
         </p>
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -140,10 +138,10 @@ export default function LandingPage() {
             fontWeight: 500,
           }}
         >
-          <span>✓ Real A2A Network Protocol</span>
-          <span>✓ Model Context Protocol (MCP)</span>
-          <span>✓ Role-Based Access Control</span>
-          <span>✓ Complete Audit Trail</span>
+          <span>✓ Secure request coordination</span>
+          <span>✓ Real-time blood availability</span>
+          <span>✓ Secure role-based access</span>
+          <span>✓ Clear activity history</span>
         </div>
       </section>
 
@@ -158,10 +156,10 @@ export default function LandingPage() {
         <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--color-text-main)', marginBottom: '0.5rem' }}>
-              Built for Clinical Urgency & Protocol Interoperability
+              Built for Clinical Urgency
             </h2>
             <p className="text-secondary" style={{ fontSize: '0.9375rem' }}>
-              Every blood request is processed through specialized distributed agents adhering to strict healthcare constraints.
+              Every request is handled with clear status updates, facility access controls, and healthcare-focused workflows.
             </p>
           </div>
 
@@ -197,10 +195,10 @@ export default function LandingPage() {
                 01
               </div>
               <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                Requirement Agent
+                Requirement Validation
               </h3>
               <p className="text-secondary" style={{ fontSize: '0.875rem', lineHeight: 1.5 }}>
-                Parses natural language requests or structured forms, validates ABO/Rh blood groups, and verifies emergency urgency against hospital guidelines.
+                Captures blood group, unit requirements, urgency, and other details needed to process a request accurately.
               </p>
             </div>
 
@@ -229,10 +227,10 @@ export default function LandingPage() {
                 02
               </div>
               <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                Matching & Allocation Agent
+                Blood Matching & Allocation
               </h3>
               <p className="text-secondary" style={{ fontSize: '0.875rem', lineHeight: 1.5 }}>
-                Calculates biological compatibility (exact and compatible donor alternatives) and queries real-time blood bank inventory and active donor pools.
+                Finds compatible blood sources and helps allocate available units based on the request.
               </p>
             </div>
 
@@ -261,10 +259,10 @@ export default function LandingPage() {
                 03
               </div>
               <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-                Location & Dispatch Agent
+                Location & Dispatch
               </h3>
               <p className="text-secondary" style={{ fontSize: '0.875rem', lineHeight: 1.5 }}>
-                Computes geodesic distances and transit ETAs between hospitals and blood centers, enabling fast dispatch and priority scoring.
+                Helps identify nearby blood sources and supports faster dispatch planning.
               </p>
             </div>
           </div>
@@ -283,11 +281,9 @@ export default function LandingPage() {
           fontSize: '0.8125rem',
         }}
       >
-        <p style={{ margin: 0 }}>
-          Agent-to-Agent & Model Context Protocol Blood Donation Coordination Platform &copy; {new Date().getFullYear()}
-        </p>
+        <p style={{ margin: 0 }}>Blood Donation Coordination Platform &copy; {new Date().getFullYear()}</p>
         <p style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}>
-          Secure Healthcare Portal &bull; Strictly Audited Operational Access &bull; FastAPI Gateway
+          Secure Healthcare Portal &bull; Audited Operational Access
         </p>
       </footer>
     </div>

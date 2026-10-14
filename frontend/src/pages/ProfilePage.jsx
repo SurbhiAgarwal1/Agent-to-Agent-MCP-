@@ -14,10 +14,10 @@ export default function ProfilePage() {
     <div style={{ maxWidth: '780px', margin: '0 auto' }}>
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>
-          User Profile & Credentials
+          Profile
         </h1>
         <p className="text-secondary" style={{ marginTop: '0.25rem', fontSize: '0.9375rem' }}>
-          Identity and Role-Based Access Control (RBAC) authorization scope
+          Manage your account and facility access.
         </p>
       </div>
 
@@ -30,7 +30,7 @@ export default function ProfilePage() {
             <div className="text-secondary" style={{ fontWeight: 600 }}>Email Address:</div>
             <div><strong>{user?.email || '—'}</strong></div>
 
-            <div className="text-secondary" style={{ fontWeight: 600 }}>Assigned Role:</div>
+            <div className="text-secondary" style={{ fontWeight: 600 }}>Role:</div>
             <div>
               <span className="badge badge-neutral" style={{ fontSize: '0.875rem' }}>
                 {role}
@@ -46,10 +46,10 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        <Card title="Active Memberships & Facility Scopes">
+        <Card title="Facility Access">
           <div style={{ marginBottom: '1.25rem' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-              Authorized Hospital Scopes
+              Hospital Access
             </h3>
             {hospitalIds.length > 0 ? (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -61,18 +61,18 @@ export default function ProfilePage() {
               </div>
             ) : role === 'ADMIN' ? (
               <p className="text-secondary" style={{ margin: 0, fontSize: '0.875rem' }}>
-                Full system administrator: Authorized across all hospitals.
+                Administrator access includes all hospitals.
               </p>
             ) : (
               <p className="text-secondary" style={{ margin: 0, fontSize: '0.875rem' }}>
-                No active hospital memberships. An administrator must assign your account to a hospital before you can create requests.
+                No hospital access is currently assigned.
               </p>
             )}
           </div>
 
           <div>
             <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-              Authorized Blood Bank Scopes
+              Blood Bank Access
             </h3>
             {bankIds.length > 0 ? (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -84,19 +84,19 @@ export default function ProfilePage() {
               </div>
             ) : role === 'ADMIN' ? (
               <p className="text-secondary" style={{ margin: 0, fontSize: '0.875rem' }}>
-                Full system administrator: Authorized across all blood bank facilities.
+                Administrator access includes all blood banks.
               </p>
             ) : (
               <p className="text-secondary" style={{ margin: 0, fontSize: '0.875rem' }}>
-                No active blood bank memberships assigned.
+                No blood bank access is currently assigned.
               </p>
             )}
           </div>
         </Card>
 
-        <Card title="Session Management">
+        <Card title="Account Actions">
           <p className="text-secondary" style={{ fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Sign out to invalidate your current browser session token.
+            Sign out of your account on this device.
           </p>
           <Button variant="danger" onClick={logout}>
             Sign Out

@@ -17,8 +17,11 @@ import UrgencyBadge from '../components/common/UrgencyBadge';
 import BloodGroupBadge from '../components/common/BloodGroupBadge';
 import CoordinationWorkflow from '../components/coordination/CoordinationWorkflow';
 import MatchesList from '../components/matching/MatchesList';
+import useAuth from '../hooks/useAuth';
 
 export default function BloodRequestDetailsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role?.toUpperCase() === 'ADMIN';
   const { id } = useParams();
   const requestId = parseInt(id, 10);
 
@@ -77,12 +80,12 @@ export default function BloodRequestDetailsPage() {
       if (res?.ranked_matches) {
         setMatches(res.ranked_matches);
       }
-      setSuccessMessage('Multi-agent coordination cycle completed successfully.');
+      setSuccessMessage('Blood availability has been checked and the request progress was updated.');
       // Refresh request status
       const updatedReq = await getBloodRequest(requestId);
       setRequest(updatedReq);
     } catch (err) {
-      setError(err.message || 'Coordination workflow encountered an error.');
+      setError(err.message || 'We could not update the request progress. Please try again.');
     } finally {
       setCoordinating(false);
     }
@@ -99,11 +102,11 @@ export default function BloodRequestDetailsPage() {
       if (res?.ranked_matches || res?.allocations) {
         setMatches(res.ranked_matches || res.allocations || []);
       }
-      setSuccessMessage('Autonomous orchestration and allocation completed successfully.');
+      setSuccessMessage('Blood allocation has been updated successfully.');
       const updatedReq = await getBloodRequest(requestId);
       setRequest(updatedReq);
     } catch (err) {
-      setError(err.message || 'Orchestration workflow failed.');
+      setError(err.message || 'We could not update the blood allocation. Please try again.');
     } finally {
       setCoordinating(false);
     }
@@ -198,24 +201,47 @@ export default function BloodRequestDetailsPage() {
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {!isResolved && (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCoordinate}
-                loading={coordinating}
-                title="Run end-to-end multi-agent preview coordination"
-              >
-                Run A2A Coordination
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleOrchestrate}
-                loading={coordinating}
-                title="Execute autonomous allocation and lock candidate holds"
-              >
-                Orchestrate & Allocate
-              </Button>
+              {isAdmin ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCoordinate}
+                    loading={coordinating}
+                    title="Run the end-to-end A2A coordination workflow"
+                  >
+                    Run A2A Coordination
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleOrchestrate}
+                    loading={coordinating}
+                    title="Execute autonomous allocation and reserve candidate holds"
+                  >
+                    Orchestrate & Allocate
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCoordinate}
+                    loading={coordinating}
+                  >
+                    Find Available Blood
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleOrchestrate}
+                    loading={coordinating}
+                  >
+                    Update Allocation
+                  </Button>
+                </>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -290,14 +316,47 @@ export default function BloodRequestDetailsPage() {
         </Card>
       </div>
 
-      {/* Coordination Workflow Execution Panel */}
+      {/* Technical workflow is restricted to administrators. */}
       <div style={{ marginBottom: '1.5rem' }}>
-        <CoordinationWorkflow execution={coordinationResult} isRunning={coordinating} />
+        {isAdmin ? (
+          <CoordinationWorkflow execution={coordinationResult} isRunning={coordinating} />
+        ) : (
+          <Card title="Request Progress">
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: '0.75rem',
+              }}
+            >
+              {[
+                ['Request received', true],
+                ['Blood availability checked', !!coordinationResult || request.status !== 'PENDING'],
+                ['Sources being arranged', ['PROCESSING', 'MATCHED', 'PARTIALLY_FULFILLED'].includes(request.status)],
+                ['Fulfilled', request.status === 'FULFILLED'],
+              ].map(([label, done]) => (
+                <div
+                  key={label}
+                  style={{
+                    padding: '0.8rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-border)',
+                    backgroundColor: done ? 'var(--color-surface)' : 'var(--color-bg)',
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                    {done ? '✓ ' : '○ '}{label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Candidate Matches Table */}
       <Card
-        title={`Candidate Blood Sources & Allocations (${matches.length})`}
+        title={`Available Blood Sources & Allocations (${matches.length})`}
         actions={
           <span className="text-secondary" style={{ fontSize: '0.8125rem' }}>
             Compatible Donors & Blood Banks

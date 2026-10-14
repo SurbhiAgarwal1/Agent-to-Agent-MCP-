@@ -76,7 +76,7 @@ export default function LoginPage() {
             Sign In to Portal
           </h1>
           <p className="text-secondary" style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            Agent-to-Agent Blood Coordination Gateway
+            Secure Blood Coordination Portal
           </p>
         </div>
 

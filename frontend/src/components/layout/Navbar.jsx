@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 import { Button } from "../common/Button.jsx";
 
-export function Navbar({ onToggleSidebar }) {
+export function Navbar({ onToggleSidebar, isSidebarOpen = false }) {
   const { user, logout } = useAuth();
 
   return (
@@ -25,7 +25,9 @@ export function Navbar({ onToggleSidebar }) {
           <button
             type="button"
             onClick={onToggleSidebar}
-            aria-label="Toggle navigation menu"
+            aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={isSidebarOpen}
+            aria-controls="app-sidebar"
             style={{
               padding: "0.4rem",
               borderRadius: "var(--radius-sm)",

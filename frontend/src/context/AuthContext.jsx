@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback } from "react";
 import { loginApi, registerApi, getMeApi } from "../api/auth.js";
-import { SESSION_STORAGE_KEY } from "../api/client.js";
+import { ApiError, SESSION_STORAGE_KEY } from "../api/client.js";
 
 export const AuthContext = createContext(null);
 
@@ -10,30 +10,36 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState(null);
 
-  // Restore session on mount
+  // Restore an existing session. Only an invalid/expired token should clear it;
+  // unrelated API failures must not silently log the user out.
   useEffect(() => {
     async function restoreSession() {
       try {
         const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && (parsed.token || parsed.access_token)) {
-            const savedToken = parsed.token || parsed.access_token;
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        const savedToken = parsed?.token || parsed?.access_token;
+        if (!savedToken) return;
+
+        setToken(savedToken);
+        try {
+          const profile = await getMeApi();
+          setUser(profile);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            sessionStorage.removeItem(SESSION_STORAGE_KEY);
+            setToken(null);
+            setUser(null);
+          } else {
+            // Keep the token/session for transient 5xx/network/validation errors.
             setToken(savedToken);
-            // Fetch fresh user profile from backend
-            try {
-              const profile = await getMeApi();
-              setUser(profile);
-            } catch (err) {
-              // Token invalid or expired
-              sessionStorage.removeItem(SESSION_STORAGE_KEY);
-              setToken(null);
-              setUser(null);
-            }
           }
         }
-      } catch (e) {
+      } catch {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        setToken(null);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -41,7 +47,6 @@ export function AuthProvider({ children }) {
 
     restoreSession();
 
-    // Listen for auth expiration events from API client
     const handleExpired = () => {
       setToken(null);
       setUser(null);
@@ -55,23 +60,33 @@ export function AuthProvider({ children }) {
     setSessionExpiredMessage(null);
     const result = await loginApi(email, password);
     const accessToken = result.access_token;
+    if (!accessToken) {
+      throw new ApiError("Login response did not include an access token.", 500, result);
+    }
+
     sessionStorage.setItem(
       SESSION_STORAGE_KEY,
       JSON.stringify({ token: accessToken, role: result.role, user_id: result.user_id })
     );
     setToken(accessToken);
 
-    // Fetch user profile with memberships
-    const profile = await getMeApi();
-    setUser(profile);
-    return profile;
+    try {
+      const profile = await getMeApi();
+      setUser(profile);
+      return profile;
+    } catch (err) {
+      // Do not leave a half-authenticated session behind if profile loading fails.
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      setToken(null);
+      setUser(null);
+      throw err;
+    }
   }, []);
 
   const register = useCallback(
     async (email, password, role = "HOSPITAL_STAFF") => {
       setSessionExpiredMessage(null);
       await registerApi(email, password, role);
-      // Auto login following registration
       return login(email, password);
     },
     [login]

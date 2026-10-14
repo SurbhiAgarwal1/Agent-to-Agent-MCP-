@@ -13,8 +13,8 @@ export class ApiError extends Error {
 }
 
 export class SessionExpiredError extends ApiError {
-  constructor() {
-    super("Your session has expired. Please log in again.", 401, null);
+  constructor(data = null) {
+    super("Your session has expired. Please log in again.", 401, data);
     this.name = "SessionExpiredError";
   }
 }
@@ -45,6 +45,9 @@ export function getStoredToken() {
 
 /**
  * Core fetch wrapper with auth header injection and status handling.
+ * A 401 is a session-expiration event only when this request was sent with
+ * an existing access token. Login/register 401/4xx responses must preserve
+ * the backend error message for the user.
  */
 export async function apiRequest(endpoint, options = {}) {
   const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
@@ -64,19 +67,12 @@ export async function apiRequest(endpoint, options = {}) {
       ...options,
       headers,
     });
-  } catch (err) {
+  } catch {
     throw new ApiError(
       "Unable to connect to the server. Please check your network connection.",
       0,
       null
     );
-  }
-
-  // Handle 401 Session Expiration
-  if (response.status === 401) {
-    sessionStorage.removeItem(SESSION_STORAGE_KEY);
-    window.dispatchEvent(new CustomEvent("bdm:auth:expired"));
-    throw new SessionExpiredError();
   }
 
   let data = null;
@@ -87,6 +83,12 @@ export async function apiRequest(endpoint, options = {}) {
     } catch {
       data = null;
     }
+  }
+
+  if (response.status === 401 && token) {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent("bdm:auth:expired"));
+    throw new SessionExpiredError(data);
   }
 
   if (!response.ok) {
