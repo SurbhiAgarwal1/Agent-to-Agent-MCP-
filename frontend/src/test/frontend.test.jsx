@@ -242,7 +242,7 @@ describe('2. Public Landing & Auth Pages', () => {
     fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'new@hospital.org' } });
     fireEvent.change(screen.getByLabelText(/^Password/i), { target: { value: 'short' } });
     fireEvent.change(screen.getByLabelText(/Confirm Password/i), { target: { value: 'mismatch' } });
-    fireEvent.click(screen.getByRole('button', { name: /Register Account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Create Account/i }));
 
     expect(screen.getByRole('alert')).toHaveTextContent(/Password must be at least 6 characters/i);
   });

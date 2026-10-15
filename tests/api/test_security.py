@@ -198,8 +198,8 @@ def test_registration_default_role(client):
     assert resp.json()["role"] == "HOSPITAL_STAFF"
 
 
-def test_registration_rejects_admin_or_bloodbank(client):
-    """Verify public registration rejects ADMIN or BLOOD_BANK_STAFF role requests."""
+def test_registration_rejects_admin_without_setup_key_or_bloodbank(client):
+    """Verify ADMIN self-registration is blocked unless a setup key is configured."""
     resp_admin = client.post(
         "/api/v1/auth/register",
         json={"email": "fakeadmin@hospital.org", "password": "Passw0rd!123", "role": "ADMIN"},
@@ -211,6 +211,28 @@ def test_registration_rejects_admin_or_bloodbank(client):
         json={"email": "fakebb@hospital.org", "password": "Passw0rd!123", "role": "BLOOD_BANK_STAFF"},
     )
     assert resp_bb.status_code == 403
+
+
+def test_registration_allows_admin_with_setup_key(client, monkeypatch):
+    """Verify an ADMIN account can be bootstrapped with the configured setup key."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("ADMIN_SIGNUP_KEY", "local-admin-setup-key")
+    get_settings.cache_clear()
+    try:
+        resp = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "configured-admin@hospital.org",
+                "password": "Passw0rd!123",
+                "role": "ADMIN",
+                "admin_signup_key": "local-admin-setup-key",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["role"] == "ADMIN"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_registration_hospital_staff_allowed(client):

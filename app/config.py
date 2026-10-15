@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     
     jwt_secret_key: str
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
+    # Development bootstrap credential for creating the first ADMIN account.
+    # Keep this empty in production; public ADMIN self-registration is then disabled.
+    admin_signup_key: str = ""
+    
+    llm_provider: str = "mock"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     @field_validator("jwt_secret_key")
     @classmethod

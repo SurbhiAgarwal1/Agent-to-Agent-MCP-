@@ -29,8 +29,14 @@ def process_natural_language_request(
     """Parse natural language blood request, validate, coordinate, and summarize."""
     agent = NLInterfaceAgent(db=db, network=True)
     allowed = None if current_user.role == UserRole.ADMIN else active_hospital_ids(db, current_user.id)
-    result = agent.process_request(payload.text, allowed_hospital_ids=allowed)
-    if result.get("structured_result", {}).get("failed_at") == "AUTHORIZATION":
+    result = agent.process_request(
+    payload.text,
+    current_user_id=current_user.id,
+    allowed_hospital_ids=allowed,
+)
+    structured_result = result.get("structured_result") or {}
+
+    if structured_result.get("failed_at") == "AUTHORIZATION":
         from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active membership in the requested hospital is required.")
     if result.get("status") == "FAILED":

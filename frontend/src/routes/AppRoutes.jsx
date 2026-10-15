@@ -83,6 +83,14 @@ export default function AppRoutes() {
           }
         />
         <Route
+          path="/admin/users"
+          element={
+            <RoleRoute allowedRoles={['ADMIN']}>
+              <MembershipManagementPage />
+            </RoleRoute>
+          }
+        />
+        <Route
           path="/admin/audit-logs"
           element={
             <RoleRoute allowedRoles={['ADMIN']}>

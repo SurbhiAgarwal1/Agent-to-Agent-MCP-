@@ -2,13 +2,19 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import Button from '../components/common/Button';
-import Card from '../components/common/Card';
+
+const ROLE_OPTIONS = [
+  { value: 'HOSPITAL_STAFF', label: 'Hospital Staff', description: 'Request and coordinate blood for your facility.' },
+  { value: 'ADMIN', label: 'Administrator', description: 'Manage users, system operations, and observability.' },
+];
 
 export default function SignupPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
+  const [role, setRole] = useState('HOSPITAL_STAFF');
+  const [adminSignupKey, setAdminSignupKey] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState(null);
@@ -30,76 +36,47 @@ export default function SignupPage() {
       setError('Passwords do not match.');
       return;
     }
+    if (role === 'ADMIN' && !adminSignupKey.trim()) {
+      setError('Enter the admin setup key to create an administrator account.');
+      return;
+    }
 
     setLoading(true);
     try {
-      // Public self-registration is intentionally limited by the backend to
-      // HOSPITAL_STAFF. AuthContext owns the register -> login -> /auth/me flow.
-      await register(email, password, 'HOSPITAL_STAFF');
+      await register(email, password, role, adminSignupKey);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.message || 'Registration failed. The email may already be in use.');
+      setError(err.message || 'Registration failed. Please check your details and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '2rem 1rem',
-        backgroundColor: 'var(--color-bg)',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: '440px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '44px',
-              height: '44px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--color-primary)',
-              color: '#FFFFFF',
-              fontWeight: 700,
-              fontSize: '1.25rem',
-              marginBottom: '0.75rem',
-            }}
-          >
-            +
-          </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>
-            Create an Account
-          </h1>
-          <p className="text-secondary" style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
-            Register as Hospital Staff
-          </p>
+    <main className="auth-page">
+      <section className="auth-shell" aria-labelledby="signup-title">
+        <Link to="/" className="auth-brand" aria-label="Blood Coordination home">
+          <span className="auth-brand-mark">+</span>
+          <span>Blood Coordination</span>
+        </Link>
+
+        <div className="auth-heading">
+          <span className="auth-eyebrow">Secure account setup</span>
+          <h1 id="signup-title">Create your account</h1>
+          <p>Choose how you will use the blood coordination portal.</p>
         </div>
 
-        <Card>
-          {error && (
-            <div className="alert alert-error" role="alert" style={{ marginBottom: '1.25rem' }}>
-              {error}
-            </div>
-          )}
+        <div className="auth-card">
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
 
           <form onSubmit={handleSubmit} noValidate>
             <div className="form-group">
-              <label className="form-label" htmlFor="signup-email">
-                Email Address
-              </label>
+              <label className="form-label" htmlFor="signup-email">Email Address</label>
               <input
                 id="signup-email"
                 type="email"
-                className="form-control"
-                placeholder="staff@cityhospital.org"
+                className="form-input"
+                placeholder="you@hospital.org"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
@@ -107,25 +84,55 @@ export default function SignupPage() {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="signup-role">
-                Account Role
-              </label>
-              <input id="signup-role" className="form-control" value="Hospital Staff" readOnly />
-              <small className="text-muted" style={{ display: 'block', marginTop: '0.25rem' }}>
-                Public registration creates a HOSPITAL_STAFF account. Other roles are created by administrators.
-              </small>
-            </div>
+            <fieldset className="form-group auth-role-fieldset">
+              <legend className="form-label">Account Type</legend>
+              <div className="auth-role-grid">
+                {ROLE_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={`auth-role-option ${role === option.value ? 'selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="signup-role"
+                      value={option.value}
+                      checked={role === option.value}
+                      onChange={(e) => setRole(e.target.value)}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {role === 'ADMIN' && (
+              <div className="form-group auth-admin-key">
+                <label className="form-label" htmlFor="admin-signup-key">Admin Setup Key</label>
+                <input
+                  id="admin-signup-key"
+                  type="password"
+                  className="form-input"
+                  placeholder="Enter the setup key configured by the system owner"
+                  value={adminSignupKey}
+                  onChange={(e) => setAdminSignupKey(e.target.value)}
+                  autoComplete="off"
+                />
+                <small className="form-help">
+                  Required for administrator registration. Keep this key private.
+                </small>
+              </div>
+            )}
 
             <div className="form-group">
-              <label className="form-label" htmlFor="signup-password">
-                Password
-              </label>
+              <label className="form-label" htmlFor="signup-password">Password</label>
               <input
                 id="signup-password"
                 type="password"
-                className="form-control"
-                placeholder="Min. 6 characters"
+                className="form-input"
+                placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
@@ -134,14 +141,12 @@ export default function SignupPage() {
             </div>
 
             <div className="form-group">
-              <label className="form-label" htmlFor="signup-confirm-password">
-                Confirm Password
-              </label>
+              <label className="form-label" htmlFor="signup-confirm-password">Confirm Password</label>
               <input
                 id="signup-confirm-password"
                 type="password"
-                className="form-control"
-                placeholder="Repeat password"
+                className="form-input"
+                placeholder="Repeat your password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
@@ -149,35 +154,18 @@ export default function SignupPage() {
               />
             </div>
 
-            <div style={{ marginTop: '1.5rem' }}>
-              <Button type="submit" variant="primary" loading={loading} style={{ width: '100%' }}>
-                Register Account
-              </Button>
-            </div>
+            <Button type="submit" variant="primary" loading={loading} style={{ width: '100%' }}>
+              Create Account
+            </Button>
           </form>
 
-          <div
-            style={{
-              marginTop: '1.5rem',
-              paddingTop: '1.25rem',
-              borderTop: '1px solid var(--border-color)',
-              textAlign: 'center',
-              fontSize: '0.875rem',
-            }}
-          >
-            <span className="text-secondary">Already have an account? </span>
-            <Link to="/login" style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
-              Sign in
-            </Link>
+          <div className="auth-switch">
+            Already have an account? <Link to="/login">Sign in</Link>
           </div>
-        </Card>
-
-        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-          <Link to="/" className="text-secondary" style={{ fontSize: '0.8125rem' }}>
-            &larr; Back to public homepage
-          </Link>
         </div>
-      </div>
-    </div>
+
+        <Link to="/" className="auth-back">&larr; Back to public homepage</Link>
+      </section>
+    </main>
   );
 }

@@ -1,10 +1,12 @@
 """Authentication and Audit Log API Endpoints (Part 15)."""
 
 from typing import List, Optional
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.config import get_settings
 from app.models import User, UserRole, AuditLog, Hospital, BloodBank, HospitalMembership, BloodBankMembership
 from app.schemas.auth import UserRegister, UserCreate, UserLogin, Token, UserResponse, MembershipGrant
 from app.auth.utils import verify_password, create_access_token
@@ -18,10 +20,19 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 def register(payload: UserRegister, db: Session = Depends(get_db)):
     """Register a new user account with role (public self-service registration)."""
     requested_role = (payload.role or UserRole.HOSPITAL_STAFF).strip().upper()
-    if requested_role != UserRole.HOSPITAL_STAFF:
+
+    if requested_role == UserRole.ADMIN:
+        configured_key = get_settings().admin_signup_key.strip()
+        provided_key = (payload.admin_signup_key or "").strip()
+        if not configured_key or not provided_key or not secrets.compare_digest(provided_key, configured_key):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin registration requires the configured admin setup key.",
+            )
+    elif requested_role != UserRole.HOSPITAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Public registration can only create HOSPITAL_STAFF accounts. Contact an administrator for other roles.",
+            detail="Public registration can only create HOSPITAL_STAFF or ADMIN accounts.",
         )
 
     try:
@@ -29,7 +40,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
             db=db,
             email=payload.email,
             password=payload.password,
-            role=UserRole.HOSPITAL_STAFF,
+            role=requested_role,
         )
         return user
     except ValueError as exc:

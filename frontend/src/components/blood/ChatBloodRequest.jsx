@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { processNlRequest } from '../../api/bloodRequests';
 import Card from '../common/Card';
-import Button from '../common/Button';
 
 export default function ChatBloodRequest() {
   const navigate = useNavigate();
@@ -28,15 +27,24 @@ export default function ChatBloodRequest() {
 
     try {
       const response = await processNlRequest(text);
+
+      if (!response?.success) {
+        throw new Error(
+          response?.message || 'We could not process your blood request.'
+        );
+      }
+
       const summary =
+        response?.message ||
         response?.summary ||
         response?.response ||
-        'Your request was received. You can view its progress in Blood Requests.';
+        'Your request was received.';
 
       setMessages((current) => [...current, { role: 'assistant', content: summary }]);
 
       const requestId =
         response?.request_id ||
+        response?.extracted_fields?.request_id ||
         response?.structured_result?.request_id ||
         response?.requirement?.request_id;
 
@@ -156,27 +164,34 @@ export default function ChatBloodRequest() {
           <label className="form-label" htmlFor="blood-request-chat">
             Describe your blood requirement
           </label>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
+          <div className="blood-chat-composer">
             <textarea
               ref={textareaRef}
               id="blood-request-chat"
-              className="form-control"
               rows={3}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Example: We need 2 units of O+ blood urgently for a patient undergoing surgery."
+              placeholder="Tell us naturally what you need — for example, “We need 2 units of O+ blood urgently for a patient undergoing surgery.”"
               disabled={submitting}
               aria-describedby="blood-request-chat-help"
             />
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              loading={submitting}
+              className="blood-chat-send"
+              disabled={submitting || !input.trim()}
               aria-label="Send blood request"
+              title="Send request"
             >
-              Send
-            </Button>
+              {submitting ? (
+                <span aria-hidden="true">…</span>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M22 2 11 13" />
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                </svg>
+              )}
+            </button>
           </div>
           <small id="blood-request-chat-help" className="text-muted">
             Press Enter to send. Use Shift+Enter for a new line.
