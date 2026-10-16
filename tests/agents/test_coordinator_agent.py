@@ -126,9 +126,9 @@ def test_coordinator_orchestrate_end_to_end(db_session):
     accepted_matches = [m for m in saved_matches if m.status == MatchStatus.ACCEPTED.value]
     assert len(accepted_matches) == len(allocated)
 
-    # Verify BloodRequest updated to FULFILLED
+    # Units are reserved, not delivered: the request stays PROCESSING until delivery is confirmed
     updated_request = db_session.query(BloodRequest).filter(BloodRequest.request_id == 1).first()
-    assert updated_request.status == RequestStatus.FULFILLED.value
+    assert updated_request.status == RequestStatus.PROCESSING.value
 
 
 def test_coordinator_partial_fulfillment(db_session):
@@ -290,7 +290,7 @@ def test_coordinator_part9_location_error(db_session):
 
 
 def test_coordinator_part9_persistence(db_session):
-    """Part 9: Verify Match records are persisted with PROPOSED status and request updated."""
+    """Part 9: Verify Match records are persisted (holds + alternates) and request updated."""
     coordinator = CoordinatorAgent(db=db_session)
     result = coordinator.coordinate(request_input=1, persist=True)
 
@@ -300,8 +300,11 @@ def test_coordinator_part9_persistence(db_session):
     db_matches = db_session.query(Match).filter(Match.request_id == 1).all()
     assert len(db_matches) > 0
     for m in db_matches:
-        assert m.status == "PROPOSED"
+        # planned sources are reserved (ACCEPTED, with units); the rest are PROPOSED alternates
+        assert (m.status == "ACCEPTED") == (m.units is not None)
+        assert m.status in ("ACCEPTED", "PROPOSED")
         assert m.distance_km is not None
+    assert any(m.status == "ACCEPTED" for m in db_matches)
 
     # Check request status updated to PROCESSING
     br = db_session.query(BloodRequest).filter(BloodRequest.request_id == 1).first()

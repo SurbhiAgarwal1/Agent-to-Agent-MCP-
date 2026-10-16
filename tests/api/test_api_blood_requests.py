@@ -35,7 +35,7 @@ def client():
         seed_session.add(test_hospital)
         seed_session.commit()
         from tests.conftest import make_user, auth_headers
-        user = make_user(seed_session, "staff_br@test.org", "HOSPITAL_STAFF")
+        user = make_user(seed_session, "staff_br@test.org", "HOSPITAL_STAFF", hospital_ids=[1])
 
     def override_get_db():
         db = TestingSession()
@@ -121,7 +121,7 @@ def test_get_blood_request_not_found(client):
     """Test fetching a non-existent request ID returning HTTP 404."""
     response = client.get("/api/v1/blood-requests/9999")
     assert response.status_code == 404
-    assert "Blood request with ID 9999 not found" in response.json()["detail"]
+    assert response.json()["detail"] == "Blood request not found."
 
 
 # 6. Status update

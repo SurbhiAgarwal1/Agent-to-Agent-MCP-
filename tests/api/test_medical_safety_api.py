@@ -31,7 +31,7 @@ def world(client, db_session):
               available=True, last_donation_date=today - timedelta(days=200)),
     ])
     db_session.commit()
-    staff = make_user(db_session, "nurse@h1.test", UserRole.HOSPITAL_STAFF)
+    staff = make_user(db_session, "nurse@h1.test", UserRole.HOSPITAL_STAFF, hospital_ids=[1])
     client.headers.update(auth_headers(staff))
     created = client.post("/api/v1/blood-requests",
                           json={"hospital_id": 1, "blood_group": "A+", "units_required": 4, "urgency": "HIGH"})
@@ -63,8 +63,12 @@ def test_orchestrate_excludes_expired_stock_and_cooldown_donors(world):
     assert body["fulfillment_status"] == "PARTIALLY_FULFILLED"
 
 
-def test_mcp_find_blood_sources_applies_the_same_rules(world):
+def test_mcp_find_blood_sources_applies_the_same_rules(world, db_session):
+    from tests.conftest import auth_headers, make_user
     client, _ = world
+    admin = make_user(db_session, "mcp-safety-admin@test.org", UserRole.ADMIN)
+    client.headers.clear()
+    client.headers.update(auth_headers(admin))
     res = client.post("/api/v1/mcp/tools/find_blood_sources/invoke", json={"arguments": {"blood_group": "A+"}})
     assert res.status_code == 200
     matches = res.json()["data"]["matches"]
