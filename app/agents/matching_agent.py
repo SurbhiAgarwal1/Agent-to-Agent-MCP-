@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from app.models.blood_inventory import BloodInventory
 from app.models.blood_request import BloodRequest
 from app.models.donor import Donor
-from app.models.enums import MatchSourceType
+from app.models.enums import MatchSourceType, MatchStatus
+from app.models.match import Match
 from app.services.compatibility import get_compatible_donor_groups
 from app.services.eligibility import get_donor_min_gap_days, is_donor_eligible, is_stock_usable
 
@@ -45,12 +46,9 @@ class MatchingAgent:
     def handle_a2a_message(self, message: Any) -> Any:
         """Handle incoming A2A message for candidate blood source discovery.
         
-        Validates message envelope, discovers compatible sources, enriches coordinates,
-        and forwards to LocationAgent if connected to the message bus.
+        Validates the message envelope, discovers compatible sources and replies to the sender.
         """
-        from app.agents.a2a.message import A2AMessage, A2AMessageType
-        from app.models.hospital import Hospital
-        from app.models.blood_bank import BloodBank
+        from app.agents.a2a.message import A2AMessageType
 
         if not hasattr(message, "payload") or not isinstance(message.payload, dict):
             return message.create_error(
@@ -71,71 +69,41 @@ class MatchingAgent:
                 error_message="Malformed payload: missing requirement or blood_group.",
             )
 
-        # 1. Discover compatible sources
         matches_result = self.find_matches(
             request_data=req_data,
             inventories=message.payload.get("inventories"),
             donors=message.payload.get("donors"),
         )
 
-        # 2. If connected to A2A bus, resolve coordinates and forward to LocationAgent
-        if self.bus:
-            hospital_coords = message.payload.get("hospital_coords")
-            hospital_id = message.payload.get("hospital_id")
+        # Peer-to-peer collaboration with LocationAgent when requested and permitted on the bus
+        if (
+            message.payload.get("collaborate_location")
+            and isinstance(message.payload.get("hospital_coords"), dict)
+            and matches_result.get("matches")
+            and self.bus is not None
+            and getattr(self.bus, "hub", None) is None
+        ):
+            from app.agents.a2a.message import A2AMessage
+            from app.agents.coordinator_helpers import resolve_candidate_coordinates
 
-            if not hospital_coords and self.db and hospital_id:
-                hosp = self.db.query(Hospital).filter(Hospital.hospital_id == hospital_id).first()
-                if hosp:
-                    hospital_coords = {
-                        "hospital_id": hosp.hospital_id,
-                        "name": hosp.name,
-                        "latitude": hosp.latitude,
-                        "longitude": hosp.longitude,
-                        "address": hosp.address,
-                    }
+            located_input, coord_err = resolve_candidate_coordinates(self.db, matches_result["matches"])
+            if not coord_err and located_input:
+                loc_msg = A2AMessage.create(
+                    sender_agent="MatchingAgent",
+                    receiver_agent="LocationAgent",
+                    message_type=A2AMessageType.LOCATION_CALCULATE_DISTANCES_REQUEST,
+                    payload={
+                        "hospital_id": message.payload.get("hospital_id"),
+                        "hospital_coords": message.payload["hospital_coords"],
+                        "candidates": located_input,
+                        "requirement": req_data,
+                    },
+                    correlation_id=message.correlation_id,
+                )
+                loc_reply = self.bus.send(loc_msg)
+                if loc_reply.message_type != A2AMessageType.A2A_ERROR:
+                    matches_result["located_candidates"] = loc_reply.payload.get("candidates", [])
 
-            enriched_candidates = []
-            for m in matches_result.get("matches", []):
-                item = dict(m)
-                s_type = m["source_type"]
-                s_id = m["source_id"]
-
-                # If coordinates already in match dict, preserve them
-                if "latitude" not in item or "longitude" not in item:
-                    if self.db:
-                        if s_type == MatchSourceType.BLOOD_BANK.value:
-                            bank = self.db.query(BloodBank).filter(BloodBank.bank_id == s_id).first()
-                            if bank:
-                                item["latitude"] = bank.latitude
-                                item["longitude"] = bank.longitude
-                                item["name"] = bank.name
-                                item["address"] = bank.address
-                        else:
-                            donor = self.db.query(Donor).filter(Donor.donor_id == s_id).first()
-                            if donor:
-                                item["latitude"] = donor.latitude
-                                item["longitude"] = donor.longitude
-                                item["name"] = donor.name
-                                item["address"] = "Voluntary Donor (Mobile Dispatch)"
-
-                enriched_candidates.append(item)
-
-            loc_payload = {
-                "hospital_id": hospital_id,
-                "hospital_coords": hospital_coords,
-                "candidates": enriched_candidates,
-                "requirement": req_data,
-            }
-            next_msg = A2AMessage.create(
-                sender_agent="MatchingAgent",
-                receiver_agent="LocationAgent",
-                message_type=A2AMessageType.LOCATION_CALCULATE_DISTANCES_REQUEST,
-                payload=loc_payload,
-                correlation_id=message.correlation_id,
-            )
-            return self.bus.send(next_msg)
-
-        # Standalone response
         return message.create_response(
             sender_agent="MatchingAgent",
             message_type=A2AMessageType.MATCHING_SOURCES_FOUND_EVENT,
@@ -182,7 +150,13 @@ class MatchingAgent:
         """
         today = today or date.today()
         min_gap = get_donor_min_gap_days()
-        excluded = {"expired_inventory_batches": 0, "donors_in_cooldown": 0}
+        excluded = {
+            "expired_inventory_batches": 0,
+            "donors_in_cooldown": 0,
+            "units_held_for_other_requests": 0,
+            "donors_held_for_other_requests": 0,
+            "sources_rejected_for_request": 0,
+        }
 
         # 1. Extract request attributes
         request_id, recipient_group = self._extract_request_info(request_data)
@@ -203,7 +177,13 @@ class MatchingAgent:
         candidate_inventories = self._get_inventories(inventories)
         candidate_donors = self._get_donors(donors)
 
+        # Units/donors reserved by other requests (database-backed lookups only)
+        bank_held, donor_held, rejected = self._load_reservations(request_id)
+        use_bank_holds = inventories is None
+        use_donor_holds = donors is None
+
         matches: List[Dict[str, Any]] = []
+        bank_index: Dict[Any, Dict[str, Any]] = {}
 
         # 4. Filter and process blood bank inventory candidates
         for inv in candidate_inventories:
@@ -219,14 +199,33 @@ class MatchingAgent:
                 if not is_stock_usable(inv_data["expiry_date"], today=today):
                     excluded["expired_inventory_batches"] += 1
                     continue
-                matches.append({
+                if (MatchSourceType.BLOOD_BANK.value, inv_data["bank_id"]) in rejected:
+                    excluded["sources_rejected_for_request"] += 1
+                    continue
+                if use_bank_holds:
+                    key = (inv_data["bank_id"], bg)
+                    reserved = min(bank_held.get(key, 0), units)
+                    if reserved:
+                        bank_held[key] -= reserved
+                        units -= reserved
+                        excluded["units_held_for_other_requests"] += reserved
+                        if units <= 0:
+                            continue
+                # Merge several batches of the same group at one bank into a single source
+                existing = bank_index.get((inv_data["bank_id"], bg))
+                if existing is not None:
+                    existing["units_available"] += units
+                    continue
+                entry = {
                     "source_type": MatchSourceType.BLOOD_BANK.value,
                     "source_id": inv_data["bank_id"],
                     "blood_group": bg,
                     "units_available": units,
                     "_priority_rank": group_priority[bg],
                     "_source_rank": 0,  # Prioritize institutional blood banks before individual donors
-                })
+                }
+                bank_index[(inv_data["bank_id"], bg)] = entry
+                matches.append(entry)
 
         # 5. Filter and process voluntary donor candidates
         for donor in candidate_donors:
@@ -241,6 +240,12 @@ class MatchingAgent:
             if bg in group_priority and available:
                 if not is_donor_eligible(donor_data["last_donation_date"], today=today, min_gap_days=min_gap):
                     excluded["donors_in_cooldown"] += 1
+                    continue
+                if (MatchSourceType.DONOR.value, donor_data["donor_id"]) in rejected:
+                    excluded["sources_rejected_for_request"] += 1
+                    continue
+                if use_donor_holds and donor_data["donor_id"] in donor_held:
+                    excluded["donors_held_for_other_requests"] += 1
                     continue
                 matches.append({
                     "source_type": MatchSourceType.DONOR.value,
@@ -279,6 +284,31 @@ class MatchingAgent:
     # -------------------------------------------------------------------------
     # Helper & Extraction Methods
     # -------------------------------------------------------------------------
+
+    def _load_reservations(self, request_id: Optional[int]):
+        """Return (bank units held, donors held, sources rejected for this request).
+
+        A hold is an ACCEPTED match with reserved units. Holds belonging to the request
+        being matched are ignored because re-coordination replaces them.
+        """
+        bank_held: Dict[Any, int] = {}
+        donor_held: set = set()
+        rejected: set = set()
+        if self.db is None:
+            return bank_held, donor_held, rejected
+        for m in self.db.query(Match).filter(Match.status == MatchStatus.ACCEPTED.value, Match.units.isnot(None)):
+            if request_id is not None and m.request_id == request_id:
+                continue
+            if m.source_type == MatchSourceType.BLOOD_BANK.value:
+                key = (m.source_id, (m.blood_group or "").upper())
+                bank_held[key] = bank_held.get(key, 0) + (m.units or 0)
+            else:
+                donor_held.add(m.source_id)
+        if request_id is not None:
+            for m in self.db.query(Match).filter(Match.request_id == request_id,
+                                                 Match.status == MatchStatus.REJECTED.value):
+                rejected.add((m.source_type, m.source_id))
+        return bank_held, donor_held, rejected
 
     def _extract_request_info(
         self, request_data: Union[Dict[str, Any], BloodRequest]

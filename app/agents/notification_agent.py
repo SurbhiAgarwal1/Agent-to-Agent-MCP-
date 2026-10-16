@@ -30,6 +30,37 @@ class NotificationAgent:
         self.provider = provider or ConsoleNotificationProvider()
         self.bus = bus
 
+    def handle_a2a_message(self, message: Any) -> Any:
+        """Handle an A2A request from the Coordinator to dispatch notifications for a plan."""
+        from app.agents.a2a.message import A2AMessageType
+
+        if getattr(message, "message_type", None) != A2AMessageType.NOTIFICATION_DISPATCH_REQUEST:
+            return message.create_error(
+                sender_agent="NotificationAgent",
+                error_message=(
+                    f"Unsupported message_type '{getattr(message, 'message_type', None)}'. "
+                    f"Expected '{A2AMessageType.NOTIFICATION_DISPATCH_REQUEST}'."
+                ),
+            )
+        payload = message.payload if isinstance(message.payload, dict) else {}
+        plan = payload.get("fulfillment_plan")
+        if not isinstance(plan, dict) or payload.get("request_id") is None:
+            return message.create_error(
+                sender_agent="NotificationAgent",
+                error_message="Malformed payload: 'request_id' and 'fulfillment_plan' are required.",
+            )
+        result = self.notify_plan(
+            hospital_id=payload.get("hospital_id") or 0,
+            request_id=payload["request_id"],
+            fulfillment_plan=plan,
+            hospital_name=payload.get("hospital_name"),
+        )
+        return message.create_response(
+            sender_agent="NotificationAgent",
+            message_type=A2AMessageType.NOTIFICATION_DISPATCHED_EVENT,
+            payload=result,
+        )
+
     def notify_plan(
         self,
         hospital_id: int,

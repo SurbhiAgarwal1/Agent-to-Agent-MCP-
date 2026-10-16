@@ -35,10 +35,9 @@ class RequirementAgent:
     def handle_a2a_message(self, message: Any) -> Any:
         """Handle incoming A2A message for requirement validation.
         
-        Validates the incoming message envelope and payload. If valid and connected to
-        the message bus, dispatches an A2A message to MatchingAgent.
+        Validates the incoming message envelope and payload and replies to the sender.
         """
-        from app.agents.a2a.message import A2AMessage, A2AMessageType
+        from app.agents.a2a.message import A2AMessageType
 
         if not hasattr(message, "payload") or not isinstance(message.payload, dict):
             return message.create_error(
@@ -61,22 +60,7 @@ class RequirementAgent:
                 details={"errors": req_result.get("errors", [])},
             )
 
-        # If connected to an A2A message bus, forward to MatchingAgent
-        if self.bus:
-            next_payload = {
-                "requirement": req_result,
-                "hospital_id": message.payload.get("hospital_id"),
-            }
-            next_msg = A2AMessage.create(
-                sender_agent="RequirementAgent",
-                receiver_agent="MatchingAgent",
-                message_type=A2AMessageType.MATCHING_FIND_SOURCES_REQUEST,
-                payload=next_payload,
-                correlation_id=message.correlation_id,
-            )
-            return self.bus.send(next_msg)
-
-        # Standalone response
+        # Reply to whoever asked (the Coordinator); agents never forward to each other
         return message.create_response(
             sender_agent="RequirementAgent",
             message_type=A2AMessageType.REQUIREMENT_VALIDATED_EVENT,
@@ -119,8 +103,11 @@ class RequirementAgent:
         # 1. Validate & extract request_id
         raw_request_id = request_data.get("request_id")
         if raw_request_id is None:
-            errors.append("request_id is required.")
-            request_id = None
+            if request_data.get("is_preview"):
+                request_id = None
+            else:
+                errors.append("request_id is required.")
+                request_id = None
         elif not isinstance(raw_request_id, int) or raw_request_id <= 0:
             errors.append("request_id must be a positive integer.")
             request_id = raw_request_id
