@@ -72,3 +72,5 @@ def health_check():
 def get_dashboard():
     """Backwards-compatible aliases that redirect to the Command Center frontend."""
     return RedirectResponse(url="/frontend/")
+
+
