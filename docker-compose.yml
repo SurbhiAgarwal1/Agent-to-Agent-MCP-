@@ -5,7 +5,9 @@ services:
     environment: &app_environment
       DATABASE_URL: sqlite:////app/data/blood_donation.db
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+      SERVICE_TO_SERVICE_TOKEN: ${SERVICE_TO_SERVICE_TOKEN:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      A2A_AGENT_URLS: http://coordinator-agent:8100,http://requirement-agent:8101,http://matching-agent:8102,http://location-agent:8103,http://notification-agent:8104
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
       OBSERVABILITY_METRICS_PORT: ${OBSERVABILITY_METRICS_PORT:-9464}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
@@ -20,6 +22,11 @@ services:
     depends_on:
       backend: {condition: service_healthy}
       jaeger: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.create_connection(('127.0.0.1', 8001), 2); s.close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   coordinator-agent:
     build: {context: ., dockerfile: Dockerfile}
@@ -28,6 +35,7 @@ services:
       <<: *app_environment
       A2A_AGENT: coordinator
       COORDINATORAGENT_A2A_URL: http://coordinator-agent:8100/a2a
+      COORDINATORAGENT_BASE_URL: http://coordinator-agent:8100
       REQUIREMENTAGENT_BASE_URL: http://requirement-agent:8101
       MATCHINGAGENT_BASE_URL: http://matching-agent:8102
       LOCATIONAGENT_BASE_URL: http://location-agent:8103
@@ -42,6 +50,11 @@ services:
     volumes: [blood_data:/app/data]
     expose: ["8100", "9464"]
     depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   requirement-agent:
     build: {context: ., dockerfile: Dockerfile}
@@ -50,11 +63,17 @@ services:
       <<: *app_environment
       A2A_AGENT: requirement
       REQUIREMENTAGENT_A2A_URL: http://requirement-agent:8101/a2a
+      REQUIREMENTAGENT_BASE_URL: http://requirement-agent:8101
       MCP_URL: http://mcp:8001/mcp
       OTEL_SERVICE_NAME: requirement-agent
     volumes: [blood_data:/app/data]
     expose: ["8101", "9464"]
     depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   matching-agent:
     build: {context: ., dockerfile: Dockerfile}
@@ -63,11 +82,18 @@ services:
       <<: *app_environment
       A2A_AGENT: matching
       MATCHINGAGENT_A2A_URL: http://matching-agent:8102/a2a
+      MATCHINGAGENT_BASE_URL: http://matching-agent:8102
+      LOCATIONAGENT_BASE_URL: http://location-agent:8103
       MCP_URL: http://mcp:8001/mcp
       OTEL_SERVICE_NAME: matching-agent
     volumes: [blood_data:/app/data]
     expose: ["8102", "9464"]
     depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   location-agent:
     build: {context: ., dockerfile: Dockerfile}
@@ -76,11 +102,17 @@ services:
       <<: *app_environment
       A2A_AGENT: location
       LOCATIONAGENT_A2A_URL: http://location-agent:8103/a2a
+      LOCATIONAGENT_BASE_URL: http://location-agent:8103
       MCP_URL: http://mcp:8001/mcp
       OTEL_SERVICE_NAME: location-agent
     volumes: [blood_data:/app/data]
     expose: ["8103", "9464"]
     depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8103/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   notification-agent:
     build: {context: ., dockerfile: Dockerfile}
@@ -89,11 +121,17 @@ services:
       <<: *app_environment
       A2A_AGENT: notification
       NOTIFICATIONAGENT_A2A_URL: http://notification-agent:8104/a2a
+      NOTIFICATIONAGENT_BASE_URL: http://notification-agent:8104
       MCP_URL: http://mcp:8001/mcp
       OTEL_SERVICE_NAME: notification-agent
     volumes: [blood_data:/app/data]
     expose: ["8104", "9464"]
     depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8104/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   backend:
     build: {context: ., dockerfile: Dockerfile}
@@ -113,9 +151,11 @@ services:
       GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-20}
       GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      COORDINATORAGENT_BASE_URL: http://coordinator-agent:8100
       REQUIREMENTAGENT_BASE_URL: http://requirement-agent:8101
       MATCHINGAGENT_BASE_URL: http://matching-agent:8102
       LOCATIONAGENT_BASE_URL: http://location-agent:8103
+      NOTIFICATIONAGENT_BASE_URL: http://notification-agent:8104
       OTEL_SERVICE_NAME: gateway
     volumes: [blood_data:/app/data]
     expose: ["9464"]
