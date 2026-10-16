@@ -17,6 +17,7 @@ class Hospital(Base):
 
     # Relationship: One Hospital has many BloodRequests
     requests = relationship("BloodRequest", back_populates="hospital", cascade="all, delete-orphan")
+    memberships = relationship("HospitalMembership", back_populates="hospital", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Hospital(id={self.hospital_id}, name='{self.name}')>"

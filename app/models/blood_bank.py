@@ -17,6 +17,7 @@ class BloodBank(Base):
 
     # Relationship: One BloodBank has many BloodInventory records
     inventory = relationship("BloodInventory", back_populates="blood_bank", cascade="all, delete-orphan")
+    memberships = relationship("BloodBankMembership", back_populates="blood_bank", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<BloodBank(id={self.bank_id}, name='{self.name}')>"

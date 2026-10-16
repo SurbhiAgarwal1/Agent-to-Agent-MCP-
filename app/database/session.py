@@ -1,7 +1,7 @@
 """SQLAlchemy database engine, session management, and initialization."""
 
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.config import get_settings
 
@@ -34,6 +34,29 @@ def init_db() -> None:
     """Create all database tables registered on Base metadata."""
     import app.models  # noqa: F401 (Ensure all models are registered)
     Base.metadata.create_all(bind=engine)
+    ensure_schema(engine)
+
+
+# Columns added after the first release: table -> [(column, SQL type)].
+# create_all() never alters existing tables, so older databases get them added here.
+_ADDED_COLUMNS = {
+    "matches": [("units", "INTEGER"), ("blood_group", "VARCHAR(5)")],
+    "blood_requests": [("created_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL")],
+}
+
+
+def ensure_schema(bind) -> None:
+    """Add any known columns missing from existing tables (lightweight, idempotent migration)."""
+    inspector = inspect(bind)
+    existing_tables = set(inspector.get_table_names())
+    for table, columns in _ADDED_COLUMNS.items():
+        if table not in existing_tables:
+            continue
+        present = {c["name"] for c in inspector.get_columns(table)}
+        with bind.begin() as conn:
+            for name, sql_type in columns:
+                if name not in present:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
 
 
 def drop_db() -> None:

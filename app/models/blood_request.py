@@ -18,9 +18,13 @@ class BloodRequest(Base):
     urgency = Column(String(20), nullable=False, default=UrgencyLevel.MEDIUM.value)
     status = Column(String(20), nullable=False, default=RequestStatus.PENDING.value)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    # Authenticated creator, set server-side. NULL for legacy requests created before ownership
+    # tracking existed (those stay governed by hospital membership / admin access only).
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     hospital = relationship("Hospital", back_populates="requests")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
     matches = relationship("Match", back_populates="request", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

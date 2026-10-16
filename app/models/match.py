@@ -18,6 +18,9 @@ class Match(Base):
     estimated_time = Column(String(50), nullable=True) # e.g. "20 mins"
     priority_score = Column(Float, nullable=True)      # e.g. composite score
     status = Column(String(20), nullable=False, default=MatchStatus.PROPOSED.value)
+    # Reservation details. Set when a match becomes an ACCEPTED hold; NULL on proposals and legacy rows.
+    units = Column(Integer, nullable=True)
+    blood_group = Column(String(5), nullable=True)
 
     # Relationship: Many Matches belong to One BloodRequest
     request = relationship("BloodRequest", back_populates="matches")
