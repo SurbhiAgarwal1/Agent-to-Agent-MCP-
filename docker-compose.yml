@@ -1,5 +1,6 @@
 services:
   mcp:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["python", "-m", "app.mcp.protocol_server"]
     environment: &app_environment
@@ -29,6 +30,7 @@ services:
       retries: 3
 
   coordinator-agent:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8100", "--no-access-log"]
     environment:
@@ -57,6 +59,7 @@ services:
       retries: 3
 
   requirement-agent:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8101", "--no-access-log"]
     environment:
@@ -76,6 +79,7 @@ services:
       retries: 3
 
   matching-agent:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8102", "--no-access-log"]
     environment:
@@ -96,6 +100,7 @@ services:
       retries: 3
 
   location-agent:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8103", "--no-access-log"]
     environment:
@@ -115,6 +120,7 @@ services:
       retries: 3
 
   notification-agent:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8104", "--no-access-log"]
     environment:
@@ -134,6 +140,7 @@ services:
       retries: 3
 
   backend:
+    image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
     container_name: blood_coordination_backend
     restart: unless-stopped
