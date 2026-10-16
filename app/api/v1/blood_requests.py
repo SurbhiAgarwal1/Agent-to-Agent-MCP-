@@ -2,28 +2,42 @@
 
 from datetime import datetime, timezone
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.models.hospital import Hospital
-from app.models.blood_bank import BloodBank
-from app.models.donor import Donor
 from app.models.blood_request import BloodRequest
 from app.models.enums import RequestStatus
 from app.models.user import User, UserRole
+from app.models.membership import HospitalMembership
 from app.schemas.blood_request import (
     BloodRequestCreate,
     BloodRequestStatusUpdate,
     BloodRequestResponse,
 )
-from app.agents.requirement_agent import RequirementAgent
-from app.agents.matching_agent import MatchingAgent
-from app.agents.location_agent import LocationAgent
 from app.agents.coordinator_agent import CoordinatorAgent
 from app.auth.dependencies import get_current_user, require_role
+from app.auth.authorization import has_hospital_membership
 
 router = APIRouter()
+
+
+def _get_authorized_request(db: Session, request_id: int, user: User) -> BloodRequest:
+    """Load a request and require active membership in its owning hospital."""
+    request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
+    if request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Blood request not found.")
+    if user.role != UserRole.ADMIN and not has_hospital_membership(db, user.id, request.hospital_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hospital membership is required.")
+    return request
+
+
+class RejectMatchBody(BaseModel):
+    """Optional reason recorded in the audit log when a source is rejected."""
+    reason: Optional[str] = Field(default=None, max_length=300)
 
 
 @router.post(
@@ -55,10 +69,13 @@ def create_blood_request(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Hospital with ID {payload.hospital_id} not found.",
         )
+    if current_user.role != UserRole.ADMIN and not has_hospital_membership(db, current_user.id, hospital.hospital_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active membership in this hospital is required.")
 
     # 2. Persist the new blood request with initial status PENDING
     new_request = BloodRequest(
         hospital_id=payload.hospital_id,
+        created_by_user_id=current_user.id,
         blood_group=payload.blood_group.value,
         units_required=payload.units_required,
         urgency=payload.urgency.value,
@@ -95,10 +112,16 @@ def create_blood_request(
 )
 def list_blood_requests(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
-    """Retrieve all blood requests."""
-    return db.query(BloodRequest).order_by(BloodRequest.created_at.desc()).all()
+    """Retrieve requests in the caller's permitted scope."""
+    query = db.query(BloodRequest)
+    if current_user.role != UserRole.ADMIN:
+        query = query.join(HospitalMembership, HospitalMembership.hospital_id == BloodRequest.hospital_id).filter(
+            HospitalMembership.user_id == current_user.id,
+            HospitalMembership.is_active.is_(True),
+        )
+    return query.order_by(BloodRequest.created_at.desc()).all()
 
 
 @router.get(
@@ -114,15 +137,10 @@ def list_blood_requests(
 def get_blood_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Retrieve an individual blood request by ID."""
-    blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
-    if not blood_request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Blood request with ID {request_id} not found.",
-        )
+    blood_request = _get_authorized_request(db, request_id, current_user)
 
     return blood_request
 
@@ -148,12 +166,7 @@ def update_blood_request_status(
     current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Update the status of an existing blood request."""
-    blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
-    if not blood_request:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Blood request with ID {request_id} not found.",
-        )
+    blood_request = _get_authorized_request(db, request_id, current_user)
 
     blood_request.status = status_update.status.value
     db.commit()
@@ -175,97 +188,35 @@ def update_blood_request_status(
 @router.get(
     "/{request_id}/matches",
     summary="Run multi-agent matching pipeline for a blood request",
-    description="Executes Requirement Agent, Matching Agent, and Location Agent for the specified request.",
+    description=(
+        "Runs the Coordinator preview workflow through the remote Requirement, Matching, and Location agents. "
+        "No allocation or notification is persisted for this preview."
+    ),
 )
 def get_request_matches(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Execute end-to-end multi-agent matching pipeline for a blood request."""
-    blood_request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
-    if not blood_request:
+    from app.agents.coordinator_helpers import invoke_coordinator_from_gateway
+
+    blood_request = _get_authorized_request(db, request_id, current_user)
+    result = invoke_coordinator_from_gateway(db, request_id=request_id, persist=False, mode="coordinate")
+    if not result.get("success"):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Blood request with ID {request_id} not found.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coordinator could not complete the matching workflow.",
         )
-
-    hospital = db.query(Hospital).filter(Hospital.hospital_id == blood_request.hospital_id).first()
-    if not hospital:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Hospital with ID {blood_request.hospital_id} not found.",
-        )
-
-    # 1. Requirement Agent: validate and normalize
-    req_agent = RequirementAgent(db=db)
-    req_input = {
-        "request_id": blood_request.request_id,
-        "hospital_id": blood_request.hospital_id,
-        "blood_group": blood_request.blood_group,
-        "units_required": blood_request.units_required,
-        "urgency": blood_request.urgency,
-    }
-    req_result = req_agent.process(req_input)
-
-    # 2. Matching Agent: find compatible sources
-    match_agent = MatchingAgent(db=db)
-    match_result = match_agent.find_matches(req_result)
-
-    # 3. Location Agent: compute straight-line distances and ETAs
-    loc_agent = LocationAgent()
-    enriched_matches = []
-    for m in match_result["matches"]:
-        source_type = m["source_type"]
-        source_id = m["source_id"]
-        source_bg = m["blood_group"]
-        units = m["units_available"]
-
-        if source_type == "BLOOD_BANK":
-            bank = db.query(BloodBank).filter(BloodBank.bank_id == source_id).first()
-            name = bank.name if bank else f"Blood Bank #{source_id}"
-            address = bank.address if bank else "Central District"
-            dest_lat = bank.latitude if bank else hospital.latitude
-            dest_lon = bank.longitude if bank else hospital.longitude
-        else:
-            donor = db.query(Donor).filter(Donor.donor_id == source_id).first()
-            name = donor.name if donor else f"Donor #{source_id}"
-            address = "Voluntary Donor (Mobile Dispatch)"
-            dest_lat = donor.latitude if donor else hospital.latitude
-            dest_lon = donor.longitude if donor else hospital.longitude
-
-        loc_info = loc_agent.calculate_distance(
-            origin_lat=hospital.latitude,
-            origin_lon=hospital.longitude,
-            dest_lat=dest_lat,
-            dest_lon=dest_lon,
-            include_eta=True,
-        )
-
-        enriched_matches.append({
-            "source_type": source_type,
-            "source_id": source_id,
-            "name": name,
-            "address": address,
-            "blood_group": source_bg,
-            "units_available": units,
-            "distance_km": loc_info["distance_km"],
-            "estimated_time": loc_info["estimated_time"],
-        })
+    matches = result["ranked_matches"]
 
     return {
         "request_id": blood_request.request_id,
         "status": blood_request.status,
-        "hospital": {
-            "hospital_id": hospital.hospital_id,
-            "name": hospital.name,
-            "latitude": hospital.latitude,
-            "longitude": hospital.longitude,
-            "address": hospital.address,
-        },
-        "requirement_validation": req_result,
-        "matches_count": len(enriched_matches),
-        "matches": enriched_matches,
+        "hospital": result["hospital"],
+        "requirement_validation": result["requirement"],
+        "matches_count": len(matches),
+        "matches": matches,
     }
 
 
@@ -285,20 +236,28 @@ def orchestrate_blood_request(
     current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Execute CoordinatorAgent to autonomously orchestrate, allocate, and persist blood request matches."""
-    coordinator = CoordinatorAgent(db=db)
+    from app.agents.coordinator_helpers import invoke_coordinator_from_gateway
+
+    _get_authorized_request(db, request_id, current_user)
     try:
-        result = coordinator.orchestrate(request_id=request_id, persist=True)
-        return result
+        result = invoke_coordinator_from_gateway(db, request_id=request_id, persist=True, mode="orchestrate")
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(ve),
         )
     except Exception as exc:
+        import logging
+        logging.getLogger("app.errors").error("Orchestration failed", extra={"error_type": type(exc).__name__})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Orchestration execution failed: {str(exc)}",
+            detail="Orchestration could not be completed.",
         )
+    if not result.get("success"):
+        if result.get("failed_at") == "STATE":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request state does not allow orchestration.")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Orchestration could not complete its agent workflow.")
+    return result
 
 
 @router.post(
@@ -317,21 +276,10 @@ def coordinate_blood_request(
     current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Execute CoordinatorAgent to process, state-track, rank, and persist candidate matches."""
-    coordinator = CoordinatorAgent(db=db)
-    result = coordinator.coordinate(request_input=request_id, persist=True)
-    if not result.get("success"):
-        failed_at = result.get("failed_at", "UNKNOWN")
-        error_msg = result.get("error", "Coordination failed.")
-        if failed_at == "RECEIVED":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error_msg,
-            )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Coordination halted at {failed_at}: {error_msg}",
-        )
+    from app.agents.coordinator_helpers import invoke_coordinator_from_gateway
 
+    _get_authorized_request(db, request_id, current_user)
+    result = invoke_coordinator_from_gateway(db, request_id=request_id, persist=True, mode="coordinate")
     from app.services.audit import record_audit_log
     record_audit_log(
         db=db,
@@ -339,7 +287,88 @@ def coordinate_blood_request(
         resource="blood_request",
         resource_id=request_id,
         user_id=current_user.id,
-        details={"status": result.get("current_state"), "candidates_count": result.get("candidates_count")},
+        details={"status": result.get("current_state"), "candidates_count": result.get("candidates_count"),
+                 "success": bool(result.get("success"))},
     )
+    if not result.get("success"):
+        failed_at = result.get("failed_at", "UNKNOWN")
+        if failed_at == "RECEIVED":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Blood request not found.",
+            )
+        if failed_at == "STATE":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request state does not allow coordination.")
+        if failed_at == "VALIDATION":
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Blood request validation failed.")
+        if failed_at == "MATCHING" and "No compatible blood sources found" in str(result.get("error", "")):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No compatible blood sources are available.")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Coordinator could not complete its agent workflow.",
+        )
 
     return result
+
+
+def _match_action(db, current_user, request_id, match_id, action, audit_name, details=None, **kwargs):
+    """Run a match lifecycle action, translating service errors to HTTP errors and auditing success."""
+    from app.services import fulfillment_service as fs
+    from app.services.audit import record_audit_log
+    _get_authorized_request(db, request_id, current_user)
+    try:
+        result = action(db, request_id, match_id, **kwargs)
+    except fs.MatchNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except (fs.InvalidMatchState, fs.InsufficientStock) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    record_audit_log(
+        db=db,
+        action=audit_name,
+        resource="match",
+        resource_id=match_id,
+        user_id=current_user.id,
+        details={"request_id": request_id, "request_status": result.get("request_status"), **(details or {})},
+    )
+    return result
+
+
+@router.post(
+    "/{request_id}/matches/{match_id}/complete",
+    summary="Confirm that a reserved match was delivered",
+    description=(
+        "Marks an ACCEPTED (reserved) match COMPLETED. Blood bank stock is reduced "
+        "(earliest-expiring batches first) or the donor starts their donation cool-down, "
+        "and the request becomes PARTIALLY_FULFILLED or FULFILLED."
+    ),
+    responses={404: {"description": "Match not found for this request."},
+               409: {"description": "Match is not in a completable state, or stock is no longer sufficient."}},
+)
+def complete_blood_match(
+    request_id: int,
+    match_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
+):
+    from app.services.fulfillment_service import complete_match
+    return _match_action(db, current_user, request_id, match_id, complete_match, "COMPLETE_MATCH")
+
+
+@router.post(
+    "/{request_id}/matches/{match_id}/reject",
+    summary="Reject a proposed or reserved match",
+    description="Releases the reserved units. The rejected source is not offered again for this request.",
+    responses={404: {"description": "Match not found for this request."},
+               409: {"description": "Match can no longer be rejected."}},
+)
+def reject_blood_match(
+    request_id: int,
+    match_id: int,
+    body: Optional[RejectMatchBody] = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
+):
+    from app.services.fulfillment_service import reject_match
+    reason = body.reason if body else None
+    return _match_action(db, current_user, request_id, match_id, reject_match, "REJECT_MATCH",
+                         details={"reason": reason}, reason=reason)

@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
@@ -25,6 +25,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Register versioned API routers
 app.include_router(api_v1_router, prefix="/api/v1")
 
@@ -37,7 +38,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -45,9 +46,8 @@ app.add_middleware(
 if FRONTEND_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
-# Add Observability Metrics Middleware (Part 16)
-from app.observability.metrics import MetricsMiddleware, get_metrics_snapshot
-app.add_middleware(MetricsMiddleware)
+from app.observability.tracing import instrument_fastapi
+instrument_fastapi(app, "gateway")
 
 
 @app.get("/", tags=["Root"])
@@ -65,16 +65,6 @@ def health_check():
     return {
         "status": "healthy",
     }
-
-
-from app.models.user import User, UserRole
-from app.auth.dependencies import require_role
-
-
-@app.get("/metrics", tags=["Observability"])
-def get_metrics(current_user: User = Depends(require_role([UserRole.ADMIN]))):
-    """Real-time observability operational metrics snapshot (Part 16)."""
-    return get_metrics_snapshot()
 
 
 @app.get("/dashboard", include_in_schema=False)

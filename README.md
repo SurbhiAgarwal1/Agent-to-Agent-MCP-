@@ -3,7 +3,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Tests Passing](https://img.shields.io/badge/tests-243%2F243%20passing-brightgreen.svg)](tests/)
+[![Automated Tests](https://img.shields.io/badge/tests-automated-blue.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-92%25-success.svg)](tests/)
 [![A2A Protocol](https://img.shields.io/badge/Architecture-Agent--to--Agent%20(A2A)-purple.svg)](app/agents/a2a/)
 [![MCP Server](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-orange.svg)](app/mcp/)
@@ -16,7 +16,7 @@
 
 During mass casualty incidents, traumatic surgeries, and acute clinical shortages, **every minute spent locating compatible blood units impacts patient survival rates**. Traditional healthcare supply chains suffer from fragmented communications, manual phone calls, and siloed inventory databases that fail to aggregate multi-source quotas when a single blood bank lacks sufficient stock.
 
-The **Blood Donation Matching & Emergency Coordination System** is a prototype multi-agent platform for emergency blood logistics. Built with **FastAPI**, an in-process **Agent-to-Agent (A2A) message bus**, and an MCP-style tool server (REST endpoints exposing JSON-schema tools), the platform coordinates specialized autonomous agents to validate clinical requests, determine erythrocyte (RBC) immunological compatibility, calculate real road network routing, execute multi-source combinatorial optimization, and dispatch emergency alerts across multichannel communication bridges.
+The **Blood Donation Matching & Emergency Coordination System** is a prototype multi-agent platform for emergency blood logistics. Built with **FastAPI**, official A2A and MCP SDK protocol services, and the existing domain logic, the platform coordinates specialized agents to validate requests, determine erythrocyte compatibility, calculate source distances, optimize multi-source fulfillment, and dispatch alerts. The original in-process bus and REST tool routes remain available for existing clients.
 
 ---
 
@@ -29,9 +29,10 @@ The **Blood Donation Matching & Emergency Coordination System** is a prototype m
 6. [Emergency Command Center UI](#-emergency-command-center-ui)
 7. [API Reference & Clinical Dispatch](#-api-reference--clinical-dispatch)
 8. [Docker Compose & Deployment](#-docker-compose--deployment)
-9. [Local Development & Verification](#-local-development--verification)
-10. [Test Suite & Quality Assurance (243 Tests)](#-test-suite--quality-assurance-243-tests)
-11. [Project Directory Structure](#-project-directory-structure)
+9. [Observability & Admin Boundary](#observability--admin-boundary)
+10. [Local Development & Verification](#-local-development--verification)
+11. [Test Suite & Quality Assurance](#-test-suite--quality-assurance)
+12. [Project Directory Structure](#-project-directory-structure)
 
 ---
 
@@ -89,7 +90,7 @@ The system orchestrates a pipeline separating concerns between clinical intake, 
                                                ▼
                   ┌─────────────────────────────────────────────────────────┐
                   │              Audit Logging & System Observability       │  
-                  │           [Audit log table, JSON metrics snapshot]  │
+                  │                  [Audit log table]                   │
                   └─────────────────────────────────────────────────────────┘
 ```
 
@@ -116,7 +117,7 @@ The system is engineered as an end-to-end, phased 16-part architecture:
 | **Part 13** | **Command Center Web UI** | Real-time Single Page Application (SPA) dashboard with live 5s polling, interactive clinical dispatch, and visual agent pipeline cards. | Modern Vanilla HTML5/CSS3/ES6 |
 | **Part 14** | **LLM Natural Language Parser** | Natural language clinical intake extracting blood group, unit counts, and urgency from free-text notes and forwarding to the coordinator. | Built-in regex parser (LLM provider hook not implemented yet) |
 | **Part 15** | **Auth & Audit Log** | JWT token authentication, bcrypt hashing, Role-Based Access Control (`HOSPITAL_STAFF`, `BLOOD_BANK_STAFF`, `ADMIN`) enforced on every API route, and audit logging. | JWT, Bcrypt, Audit log table |
-| **Part 16** | **Docker, CI/CD & Metrics** | Multi-stage containerization (`Dockerfile`, `docker-compose.yml`), GitHub Actions test matrix, and a JSON `/metrics` snapshot. | Docker, Compose, GitHub Actions |
+| **Part 16** | **Docker, CI/CD & Observability** | Multi-stage containers, CI, internal OpenTelemetry metrics/traces, Prometheus, Grafana, and Jaeger. | Docker, Compose, OpenTelemetry |
 
 ---
 
@@ -263,7 +264,6 @@ The system includes a dedicated, responsive **Emergency Command Center Single Pa
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Application health probe. | No |
-| `GET` | `/metrics` | JSON metrics snapshot (request counts and latency); not Prometheus text format. | `ADMIN` |
 | `GET` | `/dashboard` | Redirects to the Command Center UI at `/frontend/`. | No |
 | `POST` | `/api/v1/auth/register` | Public self-registration. Always creates a `HOSPITAL_STAFF` account; other roles are rejected with 403. | No |
 | `POST` | `/api/v1/auth/login` | Authenticate user and receive JWT Bearer token. | No |
@@ -277,7 +277,9 @@ The system includes a dedicated, responsive **Emergency Command Center Single Pa
 | `POST` | `/api/v1/blood-requests` | Create structured emergency blood request. | `HOSPITAL_STAFF`, `ADMIN` |
 | `PATCH` | `/api/v1/blood-requests/{id}/status` | Update request status. | `HOSPITAL_STAFF`, `ADMIN` |
 | `POST` | `/api/v1/blood-requests/{id}/coordinate` | **Execute Coordinator Agent pipeline** & return optimized fulfillment plan. | `HOSPITAL_STAFF`, `ADMIN` |
-| `POST` | `/api/v1/blood-requests/{id}/orchestrate` | Orchestrate allocation and persist matches. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/blood-requests/{id}/orchestrate` | Same pipeline as `/coordinate`, returned as allocated / standby sources. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/blood-requests/{id}/matches/{match_id}/complete` | Confirm delivery: reduces blood bank stock (earliest expiry first) or starts the donor cool-down. | `HOSPITAL_STAFF`, `ADMIN` |
+| `POST` | `/api/v1/blood-requests/{id}/matches/{match_id}/reject` | Reject a source and release its reserved units (optional `{"reason": "..."}`). | `HOSPITAL_STAFF`, `ADMIN` |
 | `POST` | `/api/v1/nl-request` | **Natural Language Clinical Intake**: parses raw emergency text notes. | `HOSPITAL_STAFF`, `ADMIN` |
 | `GET` | `/api/v1/mcp/tools` | List registered MCP tools and JSON Schemas. | Any logged-in user |
 | `GET` | `/api/v1/mcp/tools/{name}` | Describe one MCP tool. | Any logged-in user |
@@ -378,12 +380,26 @@ The stack launches:
 - **Backend API Server**: `http://localhost:8000` (FastAPI with Uvicorn)
 - **Interactive Swagger Docs**: `http://localhost:8000/docs`
 - **Command Center Dashboard**: `http://localhost:8000/frontend/` or `http://localhost:3000`
-- **Metrics (JSON, ADMIN token required)**: `http://localhost:8000/metrics`
+- **Grafana (local operations UI)**: `http://localhost:3001` (use the admin password configured in `.env`)
+- **Prometheus UI (local only)**: `http://localhost:9090`
+- **Jaeger UI (local only)**: `http://localhost:16686`
+
+Observability pages are separate from the user API. Internal scrape endpoints listen on
+port `9464` inside the Compose network and are not published to the host or routed by
+the gateway.
 
 To stop the services:
 ```bash
 docker-compose down
 ```
+
+## Observability & Admin Boundary
+
+**Observability is an internal administrative/operations capability and is not exposed to normal users or hospital staff.** OpenTelemetry traces from the gateway, A2A agents, and MCP service are exported to Jaeger. Each process exposes Prometheus scrape metrics on port `9464` only inside the Compose network. Grafana is provisioned with Prometheus/Jaeger datasources and system health, A2A, MCP, LLM, and workflow dashboards. JSON logs include trace/span correlation IDs when available and omit request contents.
+
+The tools are separate from the public API: Grafana is bound to `127.0.0.1:3001`, Prometheus to `127.0.0.1:9090`, and Jaeger to `127.0.0.1:16686`. Set `GRAFANA_ADMIN_PASSWORD` in `.env`; Prometheus and Jaeger do not have built-in login in this local stack, so loopback access is for a trusted developer machine only. For shared environments, use a private operations network and the organization’s authenticated admin access boundary. No `/metrics` or `/llm/usage` route is exposed through the application gateway.
+
+See [docs/observability.md](docs/observability.md) for setup, trace/metric inspection, configuration, and privacy details, and [docs/future-role-based-frontend-boundary.md](docs/future-role-based-frontend-boundary.md) for the later USER / HOSPITAL STAFF / ADMIN frontend boundary.
 
 ---
 
@@ -426,6 +442,16 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"   # paste the outpu
 | `DATABASE_URL` | No | Defaults to local SQLite. |
 | `DONOR_MIN_GAP_DAYS` | No | Minimum days between a donor's donations (default 56; accepts 1-365). Confirm with your clinical lead. |
 
+### How the agents talk (A2A)
+The Coordinator is the only hub. For every request it sends a typed message to each agent and reads the reply, in this order: `RequirementAgent` (validate), `MatchingAgent` (find safe sources), `LocationAgent` (distances), then, once units are reserved, `NotificationAgent`. Agents never message each other: the bus is created with the Coordinator as hub and refuses any message that does not involve it. Every `/coordinate` and `/orchestrate` response includes `a2a_trace`, the list of messages exchanged (one shared `correlation_id`). Previews (`persist=False`) send no notifications.
+
+### Request lifecycle
+1. `POST .../coordinate` finds safe sources, plans the allocation and **reserves** the planned units (matches become `ACCEPTED` with `units`). Other requests can no longer use those units or donors. The request becomes `PROCESSING`, or `PARTIALLY_FULFILLED` if stock cannot cover it.
+2. A person confirms each delivery with `.../matches/{id}/complete` (stock is reduced / donor cool-down starts) or releases it with `.../reject`.
+3. The request becomes `FULFILLED` only when completed units cover the need. Running `/coordinate` again replaces open reservations, keeps delivered units, and skips rejected sources.
+
+Reservations use an in-process lock, which is only safe with a single server process (see `app/services/fulfillment_service.py`).
+
 ### 4. Create the First Administrator
 Public registration only creates `HOSPITAL_STAFF`. Create an admin from the command line (the password is prompted, never passed as an argument):
 ```bash
@@ -446,9 +472,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ---
 
-## 🧪 Test Suite & Quality Assurance (243 Tests)
+## 🧪 Test Suite & Quality Assurance
 
-The automated suite has **243 tests across 23 modules** covering unit, integration and access-control checks. It uses synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated.
+The automated suite covers unit, integration, protocol, and access-control behavior using synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated. Run the test suite locally to see the current pass/fail count.
 
 ### Run Full Test Suite
 ```bash
@@ -465,7 +491,9 @@ python -m pytest -v --cov=app --cov-report=term-missing
 | Test Module | Coverage Domain | Tests |
 | :--- | :--- | :---: |
 | `tests/agents/test_a2a_communication.py` | A2A message bus and typed envelopes | 11 |
+| `tests/agents/test_a2a_hub.py` | Hub-only routing through the Coordinator, trace, notifications after reservation | 19 |
 | `tests/agents/test_coordinator_agent.py` | Coordinator state machine and end-to-end pipeline | 12 |
+| `tests/agents/test_coordinator_holds.py` | Unit reservation, re-coordination, rejected sources, closed requests | 15 |
 | `tests/agents/test_location_agent.py` | Distance calculation and swappable routing providers | 13 |
 | `tests/agents/test_matching_agent.py` | RBC compatibility and candidate ranking | 11 |
 | `tests/agents/test_matching_safety.py` | Expired stock and donor cool-down excluded from matches | 11 |
@@ -478,16 +506,18 @@ python -m pytest -v --cov=app --cov-report=term-missing
 | `tests/api/test_frontend_dashboard.py` | Frontend serving, login screen and token handling | 4 |
 | `tests/api/test_security.py` | Auth on every route, role matrix, registration rules, JWT secret and CORS config | 67 |
 | `tests/api/test_medical_safety_api.py` | Expiry and donor-gap rules through the HTTP API | 3 |
+| `tests/api/test_match_lifecycle_api.py` | Complete / reject endpoints, auth and audit | 9 |
 | `tests/db/test_models.py` | ORM models, relationships, constraints | 9 |
+| `tests/db/test_schema_migration.py` | Startup migration adding the units / blood_group columns | 3 |
 | `tests/db/test_seed.py` | Synthetic data seeding | 2 |
 | `tests/mcp/test_mcp_server.py` | MCP tool listing, schemas and invocation | 10 |
+| `tests/services/test_fulfillment_service.py` | Completing / rejecting matches, stock and donor updates | 14 |
 | `tests/services/test_eligibility.py` | Expiry and donor-gap rules, configuration | 24 |
 | `tests/services/test_optimization_service.py` | Multi-source allocation | 6 |
 | `tests/services/test_scarce_blood_policy.py` | O- conservation policy in optimizer and coordinator | 16 |
 | `tests/services/test_routing_provider.py` | Haversine / OSRM providers and fallback | 5 |
 | `tests/test_main.py` | App startup and health endpoint | 3 |
-| `tests/test_observability.py` | Metrics snapshot and /metrics (ADMIN) | 3 |
-| **TOTAL** | | **243** |
+| `tests/test_observability.py` | Telemetry configuration, safe metrics boundary, W3C trace context, Prometheus endpoint | 6 |
 
 ---
 
@@ -522,7 +552,7 @@ python -m pytest -v --cov=app --cov-report=term-missing
 │   │   └── a2a/                         # Agent-to-Agent communication layer
 │   │       ├── bus.py                   # In-process synchronous message bus
 │   │       ├── message.py               # Typed A2A message envelope
-│   │       └── orchestration.py         # A2A sequence coordinator
+│   │       └── orchestration.py         # Read-only A2A preview run by the Coordinator
 │   ├── api/                             # RESTful API Endpoints
 │   │   └── v1/
 │   │       ├── auth.py                  # User registration, login, profile, audit logs
@@ -583,7 +613,7 @@ python -m pytest -v --cov=app --cov-report=term-missing
 │       ├── index.html                   # Command Center interface
 │       ├── styles.css                   # Responsive dark-theme clinical styling
 │       └── app.js                       # Live polling & interactive dispatch logic
-└── tests/                               # Comprehensive Automated Test Suite (243 Tests)
+└── tests/                               # Automated unit, integration, and protocol tests
     ├── conftest.py                      # Shared test fixtures (db_session, client)
     ├── test_main.py
     ├── test_observability.py
@@ -601,3 +631,30 @@ python -m pytest -v --cov=app --cov-report=term-missing
 Distributed under the **MIT License**.
 
 > **Disclaimer:** This is a demo/prototype that uses synthetic data only. It has not been clinically validated and must not be used to make real transfusion or blood-allocation decisions.
+# Protocol Services (A2A + MCP)
+
+The original FastAPI API and in-process `MessageBus` remain for compatibility. The
+repository also includes independent protocol services that reuse the existing domain
+tools rather than replacing their rules:
+
+- `mcp`: official MCP Python SDK, Streamable HTTP at `http://localhost:8001/mcp/`.
+  It exposes validation, source matching, distance, and notification dispatch tools.
+- `coordinator-agent`, `requirement-agent`, `matching-agent`, `location-agent`, and
+  `notification-agent`: A2A SDK JSON-RPC services on ports 8100–8104. Agent Cards are
+  served at `/.well-known/agent-card.json` and JSON-RPC at `/a2a`.
+- The Coordinator A2A executor discovers Requirement, Matching, and Location Agent
+  Cards and calls them through the A2A SDK. Those agents call the MCP service using the
+  MCP Python SDK. The existing non-protocol Coordinator API still uses the original
+  in-process bus for compatibility.
+- Coordinator planning uses `LLM_PROVIDER=mock` by default. The deterministic mock
+  needs no key or network connection. To explicitly enable Gemini, set
+  `LLM_PROVIDER=gemini`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`;
+  `LLM_FALLBACK_PROVIDER=mock` enables an explicit mock fallback on provider errors.
+  Gemini only returns a validated plan; Coordinator still controls A2A routing and
+  deterministic tools. Provider/token details are not returned through user API responses.
+
+Run with `docker compose up --build`. Set `JWT_SECRET_KEY` and `GRAFANA_ADMIN_PASSWORD` in `.env`.
+The backend health check gates protocol services so the shared SQLite schema exists
+before tools are called. `A2A_TIMEOUT_SECONDS`, `A2A_MAX_RETRIES`,
+`MCP_TIMEOUT_SECONDS`, `MCP_MAX_RETRIES`, `GEMINI_TIMEOUT_SECONDS`, and
+`GEMINI_MAX_RETRIES` tune protocol and model resilience.
