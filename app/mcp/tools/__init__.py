@@ -21,6 +21,13 @@ from app.mcp.tools.location_tool import (
     OUTPUT_SCHEMA as LOCATION_OUTPUT_SCHEMA,
     handle_calculate_distance,
 )
+from app.mcp.tools.notification_tool import (
+    TOOL_NAME as NOTIFICATION_TOOL_NAME,
+    TOOL_DESCRIPTION as NOTIFICATION_TOOL_DESC,
+    INPUT_SCHEMA as NOTIFICATION_INPUT_SCHEMA,
+    OUTPUT_SCHEMA as NOTIFICATION_OUTPUT_SCHEMA,
+    handle_dispatch_notifications,
+)
 
 __all__ = [
     "VALIDATE_TOOL_NAME",
@@ -38,4 +45,9 @@ __all__ = [
     "LOCATION_INPUT_SCHEMA",
     "LOCATION_OUTPUT_SCHEMA",
     "handle_calculate_distance",
+    "NOTIFICATION_TOOL_NAME",
+    "NOTIFICATION_TOOL_DESC",
+    "NOTIFICATION_INPUT_SCHEMA",
+    "NOTIFICATION_OUTPUT_SCHEMA",
+    "handle_dispatch_notifications",
 ]
