@@ -83,7 +83,7 @@ The system orchestrates a pipeline separating concerns between clinical intake, 
                                                │
                                                ▼
                   ┌─────────────────────────────────────────────────────────┐
-                  │               Notification Dispatch Agent               │  
+                  │               Communication & Notification Dispatch Agent               │  
                   │       [Multichannel: Console, SMTP Email, Twilio SMS]   │
                   └────────────────────────────┬────────────────────────────┘
                                                │
@@ -152,6 +152,26 @@ Each agent operates autonomously with distinct domain responsibilities:
 
 ---
 
+### 6. Communication Agent (`app/agents/communication_agent.py`)
+- **Role**: Bidirectional Interactive Outreach, Donor RSVP Protocol & Emergency SLA Escalation
+- **Key Capabilities**:
+  - **Interactive Outreach Sessions**: Manages stateful communication threads per request, recording donor/bank acknowledgments (`CONFIRMED`, `DECLINED`, `DELAYED`, `EN_ROUTE`).
+  - **Urgency-Adaptive SLA Monitoring**: Automatically enforces response windows tailored to clinical acuity (CRITICAL: 15 mins, HIGH: 30 mins, MEDIUM: 60 mins).
+  - **Emergency Escalation Protocol**: Detects SLA breaches or prospective donor declinations, elevating alerts to hospital clinical leads and regional standby donor pools.
+  - **A2A & MCP Native**: Exposes official A2A typed envelopes and Model Context Protocol tools (`dispatch_communication_outreach`, `record_communication_response`, `check_communication_status`, `trigger_communication_escalation`).
+
+### 7. Calling Agent (`app/agents/calling_agent.py`)
+- **Role**: Automated Emergency Voice Dispatch & IVR Telephony Engine
+- **Key Capabilities**:
+  - **Emergency Outbound Phone Calls**: Automatically triggers interactive phone calls to matched voluntary donors and blood bank directors via telephony providers (Twilio Voice API / Console Mock Provider).
+  - **Text-to-Speech (TTS) Synthesis**: Dynamically synthesizes speech prompts detailing the requesting trauma facility, required ABO/Rh group, unit shortage, and urgency.
+  - **Interactive Touch-Tone (DTMF) Processing**: Captures and processes donor keypad responses:
+    - `1` ➔ **CONFIRM**: Donor confirms availability and pledges immediate mobilization.
+    - `2` ➔ **DECLINE**: Donor is unavailable, triggering immediate reroute to next closest donor.
+    - `3` ➔ **DELAY**: Donor can donate but indicates arrival delay.
+  - **Bidirectional Session Synchronization**: Seamlessly bridges voice keypress responses directly into active `CommunicationSession` records in real time.
+  - **A2A Protocol & MCP Integration**: Supports typed A2A envelopes (`CALLING_DISPATCH_REQUEST`, `CALLING_CALLBACK_EVENT`, `CALLING_STATUS_POLL`) and MCP tools (`dispatch_emergency_call`, `check_call_session_status`).
+
 ## 🧬 Scientific Foundations & Optimization Engine
 
 ### 1. Erythrocyte (RBC) Compatibility Matrix
@@ -199,6 +219,10 @@ To enable external autonomous LLM agents (e.g., Anthropic Claude, LangChain, or 
 | `validate_blood_request` | Validates hospital, blood group format, unit limits, and clinical urgency. | Requirement Agent | `{"blood_type": str, "units_required": int, "urgency": str, "hospital_id": int}` |
 | `find_blood_sources` | Identifies compatible blood bank inventories and eligible voluntary donors. | Matching Agent | `{"blood_type": str, "units_required": int, "hospital_id": int}` |
 | `calculate_distance` | Calculates road transit distance and ETA between hospital and source coordinates. | Location Agent | `{"origin": [lat, lon], "destination": [lat, lon]}` |
+| `dispatch_communication_outreach` | Initiates tracked multi-source outreach with urgency-adaptive SLA deadlines. | Communication Agent | `{"hospital_id": int, "request_id": int, "urgency": str, "fulfillment_plan": dict}` |
+| `record_communication_response` | Records donor or blood bank RSVP confirmation, decline, delay, or arrival ETA. | Communication Agent | `{"session_id": str, "recipient_type": str, "recipient_id": int, "response_status": str}` |
+| `dispatch_emergency_call` | Initiates automated emergency voice call with synthesized TTS emergency prompt. | Calling Agent | `{"request_id": int, "recipient_type": str, "recipient_id": int, "recipient_phone": str}` |
+| `check_call_session_status` | Inspects outbound call records and donor touchtone keypress responses. | Calling Agent | `{"request_id": int}` |
 
 ### External MCP Discovery & Invocation
 

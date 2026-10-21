@@ -15,6 +15,20 @@ from app.schemas.blood_request import (
 )
 from app.schemas.match import MatchBase, MatchCreate, MatchResponse
 from app.schemas.auth import UserRegister, UserCreate, UserLogin, Token, UserResponse
+from app.schemas.communication import (
+    CommunicationOutreachCreate,
+    CommunicationResponseInput,
+    CommunicationMessageItem,
+    CommunicationSessionResponse,
+    EscalationTriggerResponse,
+    CommunicationStatsResponse,
+)
+from app.schemas.calling import (
+    VoiceCallCreate,
+    VoiceCallWebhookInput,
+    CallSessionResponse,
+    CallingStatsResponse,
+)
 
 __all__ = [
     "HospitalBase",
@@ -40,4 +54,14 @@ __all__ = [
     "UserLogin",
     "Token",
     "UserResponse",
+    "CommunicationOutreachCreate",
+    "CommunicationResponseInput",
+    "CommunicationMessageItem",
+    "CommunicationSessionResponse",
+    "EscalationTriggerResponse",
+    "CommunicationStatsResponse",
+    "VoiceCallCreate",
+    "VoiceCallWebhookInput",
+    "CallSessionResponse",
+    "CallingStatsResponse",
 ]

@@ -5,6 +5,8 @@ from app.api.v1.nl_request import router as nl_request_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.mcp import mcp_router
 from app.observability.admin_telemetry import router as admin_telemetry_router
+from app.api.v1.communication import router as communication_router
+from app.api.v1.calling import router as calling_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(
@@ -29,4 +31,11 @@ api_v1_router.include_router(
 api_v1_router.include_router(
     admin_telemetry_router,
 )
+api_v1_router.include_router(
+    communication_router,
+)
+api_v1_router.include_router(
+    calling_router,
+)
+
 

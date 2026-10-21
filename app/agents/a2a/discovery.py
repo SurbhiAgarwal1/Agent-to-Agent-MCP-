@@ -11,6 +11,8 @@ DEFAULT_AGENT_URLS: Dict[str, str] = {
     "matching": "http://127.0.0.1:8102",
     "location": "http://127.0.0.1:8103",
     "notification": "http://127.0.0.1:8104",
+    "communication": "http://127.0.0.1:8105",
+    "calling": "http://127.0.0.1:8106",
 }
 
 SKILL_BY_AGENT: Dict[str, str] = {
@@ -19,6 +21,8 @@ SKILL_BY_AGENT: Dict[str, str] = {
     "matching": "find-sources",
     "location": "calculate-distance",
     "notification": "notify",
+    "communication": "communicate",
+    "calling": "call",
 }
 
 AGENT_BY_SKILL: Dict[str, str] = {v: k for k, v in SKILL_BY_AGENT.items()}

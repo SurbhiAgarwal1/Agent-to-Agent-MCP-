@@ -168,4 +168,113 @@ def create_default_mcp_server() -> MCPServer:
     return server
 
 
+def register_communication_tools(server: MCPServer) -> MCPServer:
+    """Register CommunicationAgent tools onto an MCPServer instance."""
+    from app.mcp.tools.communication_tool import (
+        OUTREACH_TOOL_NAME,
+        OUTREACH_TOOL_DESC,
+        OUTREACH_INPUT_SCHEMA,
+        OUTREACH_OUTPUT_SCHEMA,
+        handle_dispatch_communication_outreach,
+        RECORD_RESPONSE_TOOL_NAME,
+        RECORD_RESPONSE_TOOL_DESC,
+        RECORD_RESPONSE_INPUT_SCHEMA,
+        RECORD_RESPONSE_OUTPUT_SCHEMA,
+        handle_record_communication_response,
+        STATUS_TOOL_NAME,
+        STATUS_TOOL_DESC,
+        STATUS_INPUT_SCHEMA,
+        STATUS_OUTPUT_SCHEMA,
+        handle_check_communication_status,
+        ESCALATE_TOOL_NAME,
+        ESCALATE_TOOL_DESC,
+        ESCALATE_INPUT_SCHEMA,
+        ESCALATE_OUTPUT_SCHEMA,
+        handle_trigger_communication_escalation,
+    )
+
+    server.register_tool(
+        MCPTool(
+            name=OUTREACH_TOOL_NAME,
+            description=OUTREACH_TOOL_DESC,
+            input_schema=OUTREACH_INPUT_SCHEMA,
+            output_schema=OUTREACH_OUTPUT_SCHEMA,
+            handler=handle_dispatch_communication_outreach,
+        )
+    )
+    server.register_tool(
+        MCPTool(
+            name=RECORD_RESPONSE_TOOL_NAME,
+            description=RECORD_RESPONSE_TOOL_DESC,
+            input_schema=RECORD_RESPONSE_INPUT_SCHEMA,
+            output_schema=RECORD_RESPONSE_OUTPUT_SCHEMA,
+            handler=handle_record_communication_response,
+        )
+    )
+    server.register_tool(
+        MCPTool(
+            name=STATUS_TOOL_NAME,
+            description=STATUS_TOOL_DESC,
+            input_schema=STATUS_INPUT_SCHEMA,
+            output_schema=STATUS_OUTPUT_SCHEMA,
+            handler=handle_check_communication_status,
+        )
+    )
+    server.register_tool(
+        MCPTool(
+            name=ESCALATE_TOOL_NAME,
+            description=ESCALATE_TOOL_DESC,
+            input_schema=ESCALATE_INPUT_SCHEMA,
+            output_schema=ESCALATE_OUTPUT_SCHEMA,
+            handler=handle_trigger_communication_escalation,
+        )
+    )
+    return server
+
+
+def register_calling_tools(server: MCPServer) -> MCPServer:
+    """Register CallingAgent tools onto an MCPServer instance."""
+    from app.mcp.tools.calling_tool import (
+        DISPATCH_CALL_TOOL_NAME,
+        DISPATCH_CALL_TOOL_DESC,
+        DISPATCH_CALL_INPUT_SCHEMA,
+        DISPATCH_CALL_OUTPUT_SCHEMA,
+        handle_dispatch_emergency_call,
+        CHECK_CALL_TOOL_NAME,
+        CHECK_CALL_TOOL_DESC,
+        CHECK_CALL_INPUT_SCHEMA,
+        CHECK_CALL_OUTPUT_SCHEMA,
+        handle_check_call_session_status,
+    )
+
+    server.register_tool(
+        MCPTool(
+            name=DISPATCH_CALL_TOOL_NAME,
+            description=DISPATCH_CALL_TOOL_DESC,
+            input_schema=DISPATCH_CALL_INPUT_SCHEMA,
+            output_schema=DISPATCH_CALL_OUTPUT_SCHEMA,
+            handler=handle_dispatch_emergency_call,
+        )
+    )
+    server.register_tool(
+        MCPTool(
+            name=CHECK_CALL_TOOL_NAME,
+            description=CHECK_CALL_TOOL_DESC,
+            input_schema=CHECK_CALL_INPUT_SCHEMA,
+            output_schema=CHECK_CALL_OUTPUT_SCHEMA,
+            handler=handle_check_call_session_status,
+        )
+    )
+    return server
+
+
+def create_extended_mcp_server() -> MCPServer:
+    """Factory creating an MCPServer pre-configured with core, communication, and calling tools."""
+    server = create_default_mcp_server()
+    register_communication_tools(server)
+    register_calling_tools(server)
+    return server
+
+
 default_mcp_server = create_default_mcp_server()
+

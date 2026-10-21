@@ -223,7 +223,7 @@ class DomainAgentExecutor(AgentExecutor):
                             located, key=lambda item: item.get("distance_km", float("inf"))
                         )
                     }
-            elif self.agent_name == "NotificationAgent":
+            elif self.agent_name in ("NotificationAgent", "CommunicationAgent", "CallingAgent"):
                 result = await call_remote_tool("dispatch_notifications", payload)
             else:
                 result = await _coordinate_over_a2a(payload)
@@ -319,5 +319,15 @@ AGENT_APPS = {
         "NotificationAgent",
         "Dispatches notifications for fulfillment plans.",
         ["notify", "blood-donation"],
+    ),
+    "communication": build_agent_app(
+        "CommunicationAgent",
+        "Orchestrates interactive outreach, donor RSVPs, and emergency SLA escalations.",
+        ["communicate", "blood-donation"],
+    ),
+    "calling": build_agent_app(
+        "CallingAgent",
+        "Dispatches automated outbound emergency voice calls and processes IVR touch-tone responses.",
+        ["call", "blood-donation"],
     ),
 }
