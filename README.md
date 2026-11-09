@@ -650,6 +650,54 @@ python -m pytest -v --cov=app --cov-report=term-missing
 
 ---
 
+## 💊 Online Medicine Delivery & Pharmacy Architecture (Sanvivo, Netmeds, PharmEasy, Truemeds, Apollo 24x7)
+
+The platform implements modern e-pharmacy and hyper-local medicine delivery architectures modeled after **Netmeds, PharmEasy, Truemeds, Apollo 24x7, and Sanvivo (YC W23)**:
+
+```
+                               ┌────────────────────────────────────────────────────────┐
+                               │           Clinical & Hospital Medication Order         │
+                               └───────────────────────────┬────────────────────────────┘
+                                                           │
+                                                           ▼
+                             ┌──────────────────────────────────────────────────────────┐
+                             │    Gemini LLM Natural Language Medicine Extraction       │
+                             │  (Parses Brand Name, Active Salt, Dosage & Quantity)     │
+                             └───────────────────────────┬────────────────────────────┘
+                                                           │
+                        ┌──────────────────────────────────┴─────────────────────────────────┐
+                        ▼                                                                    ▼
+        ┌────────────────────────────────┐                                  ┌────────────────────────────────┐
+        │     Truemeds Substitution       │                                  │   Sanvivo Hyper-Local Routing  │
+        │ - Matches identical active salt│                                  │ - Haversine distance tracking  │
+        │ - Up to 50-70% cost reduction  │                                  │ - Nearest partner pharmacy     │
+        │ - Bioequivalent alternatives   │                                  │ - Real-time stock hold leases  │
+        └────────────────────────────────┘                                  └────────────────────────────────┘
+                                                       │
+                                                       ▼
+                               ┌────────────────────────────────────────────────────────┐
+                               │               Pharmacy A2A & MCP Agent                 │
+                               │ - Port 8107: fulfill-pharmacy-order skill              │
+                               │ - MCP Tools: find_medicine_substitutes, check_stock    │
+                               └────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Pillars:
+1. **Sanvivo (YC W23) Hyperlocal Fulfillment**:
+   - Rather than relying on distant centralized warehouses, the platform routes orders to partner pharmacy nodes within a rapid delivery radius ($R \le 15\text{ km}$) using Haversine distance computations.
+   - Real-time stock reservation locks prevent double allocation during concurrent emergency requests.
+2. **Truemeds Active Salt Substitution Engine**:
+   - Matches brand-name medications (e.g. *Dolo 650*, *Augmentin 625*) against identical generic chemical compositions (*Paracetamol 650mg*, *Amoxicillin + Clavulanic Acid 625mg*).
+   - Automatically computes price savings and presents bioequivalent alternatives to reduce hospital patient billing costs.
+3. **Netmeds & PharmEasy Digital Inventory Catalog**:
+   - Comprehensive multi-tenant partner pharmacy inventory tracking batch numbers, expiry dates, and real-time units.
+4. **Autonomous Agent Integration**:
+   - **`PharmacyAgent`** on A2A port 8107 handling `fulfill-pharmacy-order`.
+   - **MCP Tools**: `find_medicine_substitutes` and `check_pharmacy_stock` for autonomous LLM tool use.
+   - **Interactive Frontend UI**: Modern `/pharmacy` catalog dashboard with 1-click substitute replacement and order placement.
+
+---
+
 ## 📜 License & Compliance
 
 Distributed under the **MIT License**.
