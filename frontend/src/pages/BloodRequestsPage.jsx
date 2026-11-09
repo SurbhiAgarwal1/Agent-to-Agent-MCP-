@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { listBloodRequests } from '../api/bloodRequests';
+import { listHospitals } from '../api/hospitals';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -11,6 +12,7 @@ import EmptyState from '../components/common/EmptyState';
 
 export default function BloodRequestsPage() {
   const [requests, setRequests] = useState([]);
+  const [hospitalsMap, setHospitalsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -23,8 +25,16 @@ export default function BloodRequestsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await listBloodRequests();
+      const [data, hList] = await Promise.all([
+        listBloodRequests(),
+        listHospitals().catch(() => []),
+      ]);
       setRequests(data || []);
+      if (Array.isArray(hList)) {
+        const map = {};
+        hList.forEach((h) => { map[h.hospital_id] = h; });
+        setHospitalsMap(map);
+      }
     } catch (err) {
       setError(err.message || 'Failed to load blood requests.');
     } finally {
@@ -202,7 +212,7 @@ export default function BloodRequestsPage() {
                     <td>
                       <strong>#{req.request_id}</strong>
                     </td>
-                    <td>Hospital #{req.hospital_id}</td>
+                    <td><strong>{hospitalsMap[req.hospital_id]?.name || `Hospital #${req.hospital_id}`}</strong></td>
                     <td>
                       <BloodGroupBadge group={req.blood_group} />
                     </td>

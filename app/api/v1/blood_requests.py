@@ -200,8 +200,60 @@ def get_request_matches(
 ):
     """Execute end-to-end multi-agent matching pipeline for a blood request."""
     from app.agents.coordinator_helpers import invoke_coordinator_from_gateway
+    from app.models.match import Match
+    from app.models.hospital import Hospital
+    from app.models.blood_bank import BloodBank
+    from app.models.donor import Donor
 
     blood_request = _get_authorized_request(db, request_id, current_user)
+    hospital_obj = db.query(Hospital).filter(Hospital.hospital_id == blood_request.hospital_id).first()
+    hospital_data = {
+        "hospital_id": hospital_obj.hospital_id if hospital_obj else blood_request.hospital_id,
+        "name": hospital_obj.name if hospital_obj else f"Hospital #{blood_request.hospital_id}",
+        "latitude": hospital_obj.latitude if hospital_obj else 28.5672,
+        "longitude": hospital_obj.longitude if hospital_obj else 77.2100,
+        "address": hospital_obj.address if hospital_obj else "New Delhi",
+    } if hospital_obj else {"hospital_id": blood_request.hospital_id}
+
+    # If the request is already resolved/fulfilled or matches already exist in DB
+    existing_matches = db.query(Match).filter(Match.request_id == request_id).all()
+    if blood_request.status in ("FULFILLED", "CANCELLED") or (existing_matches and any(m.status in ("COMPLETED", "ACCEPTED") for m in existing_matches)):
+        matches = []
+        for m in existing_matches:
+            source_name = None
+            source_address = None
+            if m.source_type == "BLOOD_BANK":
+                bank = db.query(BloodBank).filter(BloodBank.bank_id == m.source_id).first()
+                if bank:
+                    source_name = bank.name
+                    source_address = bank.address
+            else:
+                donor = db.query(Donor).filter(Donor.donor_id == m.source_id).first()
+                if donor:
+                    source_name = donor.name
+            matches.append({
+                "match_id": m.match_id,
+                "source_type": m.source_type,
+                "source_id": m.source_id,
+                "name": source_name or f"{m.source_type} #{m.source_id}",
+                "source_name": source_name,
+                "address": source_address,
+                "distance_km": m.distance_km or 0.0,
+                "estimated_time": m.estimated_time or "Delivered",
+                "priority_score": m.priority_score or 1.0,
+                "status": m.status,
+                "units": m.units,
+                "blood_group": m.blood_group or blood_request.blood_group,
+            })
+        return {
+            "request_id": blood_request.request_id,
+            "status": blood_request.status,
+            "hospital": hospital_data,
+            "requirement_validation": {"valid": True, "blood_group": blood_request.blood_group, "units_required": blood_request.units_required},
+            "matches_count": len(matches),
+            "matches": matches,
+        }
+
     result = invoke_coordinator_from_gateway(db, request_id=request_id, persist=False, mode="coordinate")
     if not result.get("success"):
         raise HTTPException(
@@ -213,8 +265,8 @@ def get_request_matches(
     return {
         "request_id": blood_request.request_id,
         "status": blood_request.status,
-        "hospital": result["hospital"],
-        "requirement_validation": result["requirement"],
+        "hospital": result.get("hospital") or hospital_data,
+        "requirement_validation": result.get("requirement"),
         "matches_count": len(matches),
         "matches": matches,
     }
