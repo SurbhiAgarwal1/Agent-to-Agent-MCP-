@@ -18,6 +18,13 @@ from app.models.audit_log import AuditLog
 from app.models.membership import HospitalMembership, BloodBankMembership
 from app.models.communication import CommunicationSession, CommunicationMessage
 from app.models.calling import CallSession
+from app.models.pharmacy import (
+    Pharmacy,
+    Medicine,
+    MedicineInventory,
+    MedicineOrder,
+    MedicineOrderItem,
+)
 
 __all__ = [
     "BloodGroup",
@@ -39,4 +46,9 @@ __all__ = [
     "CommunicationSession",
     "CommunicationMessage",
     "CallSession",
+    "Pharmacy",
+    "Medicine",
+    "MedicineInventory",
+    "MedicineOrder",
+    "MedicineOrderItem",
 ]
