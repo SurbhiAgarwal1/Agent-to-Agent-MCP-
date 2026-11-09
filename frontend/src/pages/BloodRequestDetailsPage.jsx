@@ -238,7 +238,7 @@ export default function BloodRequestDetailsPage() {
                     onClick={handleOrchestrate}
                     loading={coordinating}
                   >
-                    Update Allocation
+                    Confirm Booking / Place Order
                   </Button>
                 </>
               )}
