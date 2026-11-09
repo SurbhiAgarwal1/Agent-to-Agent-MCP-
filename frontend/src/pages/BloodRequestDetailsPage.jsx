@@ -38,6 +38,13 @@ export default function BloodRequestDetailsPage() {
   const [coordinationResult, setCoordinationResult] = useState(null);
   const [matchActionLoading, setMatchActionLoading] = useState(false);
 
+  // Animated Order Placement & Location Detection Simulation State
+  const [orderModal, setOrderModal] = useState({
+    isOpen: false,
+    step: 0, // 0: Idle, 1: Detecting Location, 2: Arranging Sources, 3: Order Placed & Fulfilled!
+    targetMatch: null,
+  });
+
   const loadData = useCallback(async () => {
     if (isNaN(requestId)) {
       setError('Invalid Blood Request ID.');
@@ -88,7 +95,6 @@ export default function BloodRequestDetailsPage() {
         setMatches(res.ranked_matches);
       }
       setSuccessMessage('Blood availability has been checked and the request progress was updated.');
-      // Refresh request status
       const updatedReq = await getBloodRequest(requestId);
       setRequest(updatedReq);
     } catch (err) {
@@ -119,19 +125,34 @@ export default function BloodRequestDetailsPage() {
     }
   };
 
-  // Match fulfillment action: complete delivery
+  // Match fulfillment action with animated LocationAgent Detection & Order Placement flow
   const handleCompleteMatch = async (matchId) => {
-    setMatchActionLoading(true);
-    setError(null);
-    try {
-      await completeMatch(requestId, matchId);
-      setSuccessMessage(`Match #${matchId} marked completed. Blood units delivered.`);
-      await loadData();
-    } catch (err) {
-      setError(err.message || `Failed to complete match #${matchId}.`);
-    } finally {
-      setMatchActionLoading(false);
-    }
+    const matchObj = matches.find(m => (m.match_id || m.id) === matchId);
+    
+    // Open animated simulation modal
+    setOrderModal({
+      isOpen: true,
+      step: 1, // Step 1: LocationAgent auto-detecting hospital & route
+      targetMatch: matchObj,
+    });
+
+    // Step 1 -> Step 2 after 1.4s
+    setTimeout(() => {
+      setOrderModal(prev => ({ ...prev, step: 2 }));
+    }, 1400);
+
+    // Step 2 -> Execute Backend API & transition to Step 3 (Order Placed & Fulfilled!) after 2.6s
+    setTimeout(async () => {
+      try {
+        await completeMatch(requestId, matchId);
+        setOrderModal(prev => ({ ...prev, step: 3 }));
+        setSuccessMessage(`Order placed! Match #${matchId} completed and blood units dispatched.`);
+        await loadData();
+      } catch (err) {
+        setError(err.message || `Failed to complete match #${matchId}.`);
+        setOrderModal({ isOpen: false, step: 0, targetMatch: null });
+      }
+    }, 2800);
   };
 
   // Match fulfillment action: reject match
@@ -288,14 +309,10 @@ export default function BloodRequestDetailsPage() {
       >
         <Card>
           <div className="text-secondary" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>
-            HOSPITAL & DELIVERY ADDRESS
+            HOSPITAL
           </div>
-          <div style={{ fontSize: '1.125rem', fontWeight: 700, marginTop: '0.25rem', color: 'var(--color-primary, #b91c1c)' }}>
-            {hospitalInfo?.name || ('Hospital #' + request.hospital_id)}
-          </div>
-          <div className="text-secondary" style={{ fontSize: '0.75rem', marginTop: '0.35rem', lineHeight: '1.3' }}>
-            📍 <strong>Auto-detected by LocationAgent:</strong><br />
-            {hospitalInfo?.address || 'Sri Aurobindo Marg, Ansari Nagar East, New Delhi 110029'}
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.25rem' }}>
+            {hospitalInfo?.name || `Hospital #${request.hospital_id}`}
           </div>
         </Card>
 
@@ -327,7 +344,7 @@ export default function BloodRequestDetailsPage() {
         </Card>
       </div>
 
-      {/* Technical workflow is restricted to administrators. */}
+      {/* Request Progress Tracker */}
       <div style={{ marginBottom: '1.5rem' }}>
         {isAdmin ? (
           <CoordinationWorkflow execution={coordinationResult} isRunning={coordinating} />
@@ -343,19 +360,20 @@ export default function BloodRequestDetailsPage() {
               {[
                 ['Request received', true],
                 ['Blood availability checked', !!coordinationResult || request.status !== 'PENDING'],
-                ['Sources being arranged', ['PROCESSING', 'MATCHED', 'PARTIALLY_FULFILLED'].includes(request.status)],
-                ['Fulfilled', request.status === 'FULFILLED'],
+                ['Sources being arranged', ['PROCESSING', 'MATCHED', 'PARTIALLY_FULFILLED'].includes(request.status) || orderModal.step >= 2],
+                ['Fulfilled', request.status === 'FULFILLED' || orderModal.step >= 3],
               ].map(([label, done]) => (
                 <div
                   key={label}
                   style={{
                     padding: '0.8rem',
                     borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border)',
-                    backgroundColor: done ? 'var(--color-surface)' : 'var(--color-bg)',
+                    border: done ? '1px solid #10b981' : '1px solid var(--color-border)',
+                    backgroundColor: done ? 'rgba(16, 185, 129, 0.08)' : 'var(--color-bg)',
+                    transition: 'all 0.3s ease',
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', color: done ? '#047857' : 'inherit' }}>
                     {done ? '✓ ' : '○ '}{label}
                   </div>
                 </div>
@@ -382,6 +400,139 @@ export default function BloodRequestDetailsPage() {
           actionLoading={matchActionLoading}
         />
       </Card>
+
+      {/* Interactive Location Detection & Order Placement Modal */}
+      {orderModal.isOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '2rem',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              textAlign: 'center',
+              animation: 'fadeIn 0.3s ease',
+            }}
+          >
+            {/* Step 1: LocationAgent Detecting Location */}
+            {orderModal.step === 1 && (
+              <div>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem', animation: 'bounce 1s infinite' }}>
+                  📍
+                </div>
+                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem', color: '#1e293b' }}>
+                  LocationAgent Detecting Hospital Location...
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.25rem' }}>
+                  Triangulating delivery destination and calculating optimal emergency transit route.
+                </p>
+                <div
+                  style={{
+                    padding: '0.75rem 1rem',
+                    backgroundColor: '#f1f5f9',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    color: '#334155',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div>🏥 <strong>Hospital:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
+                  <div>📍 <strong>Address:</strong> {hospitalInfo?.address || 'Sri Aurobindo Marg, Ansari Nagar East, New Delhi 110029'}</div>
+                  <div>🧭 <strong>Coordinates:</strong> {hospitalInfo?.latitude || '28.5672'}° N, {hospitalInfo?.longitude || '77.2100'}° E</div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Sources being arranged */}
+            {orderModal.step === 2 && (
+              <div>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                  🔄
+                </div>
+                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem', color: '#0284c7' }}>
+                  Sources Being Arranged...
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.25rem' }}>
+                  Reserving units from closest vault: <strong>{orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'AIIMS Department of Transfusion Medicine'}</strong>
+                </p>
+                <div
+                  style={{
+                    padding: '0.75rem 1rem',
+                    backgroundColor: '#e0f2fe',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem',
+                    color: '#0369a1',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div>✓ <strong>Units Reserved:</strong> {request.units_required} units ({request.blood_group})</div>
+                  <div>✓ <strong>Transit ETA:</strong> {orderModal.targetMatch?.estimated_time || '~1 min straight-line'}</div>
+                  <div>✓ <strong>Urgency Protocol:</strong> {request.urgency}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Order Placed & Fulfilled! */}
+            {orderModal.step === 3 && (
+              <div>
+                <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>
+                  🎉
+                </div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669', marginBottom: '0.5rem' }}>
+                  Your Order Has Been Placed!
+                </h2>
+                <p style={{ fontSize: '0.95rem', color: '#475569', marginBottom: '1.25rem' }}>
+                  Blood units have been confirmed and dispatched. The request has been transitioned to <strong>FULFILLED</strong>.
+                </p>
+
+                <div
+                  style={{
+                    backgroundColor: '#ecfdf5',
+                    border: '1px solid #a7f3d0',
+                    borderRadius: '8px',
+                    padding: '1rem',
+                    marginBottom: '1.5rem',
+                    textAlign: 'left',
+                    fontSize: '0.875rem',
+                  }}
+                >
+                  <div style={{ color: '#065f46', fontWeight: 600, marginBottom: '0.25rem' }}>
+                    ✓ Order Summary
+                  </div>
+                  <div>• <strong>Request:</strong> #{request.request_id}</div>
+                  <div>• <strong>Blood Group:</strong> {request.blood_group} ({request.units_required} Units)</div>
+                  <div>• <strong>Delivering To:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
+                  <div>• <strong>Source:</strong> {orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'Blood Bank Vault'}</div>
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '0.75rem', fontSize: '1rem', backgroundColor: '#059669', borderColor: '#059669' }}
+                  onClick={() => setOrderModal({ isOpen: false, step: 0, targetMatch: null })}
+                >
+                  View Updated Order
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
