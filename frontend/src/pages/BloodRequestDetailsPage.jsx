@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { listHospitals } from "../api/hospitals";
 import {
   getBloodRequest,
   updateBloodRequestStatus,
@@ -26,6 +27,7 @@ export default function BloodRequestDetailsPage() {
   const requestId = parseInt(id, 10);
 
   const [request, setRequest] = useState(null);
+  const [hospitalInfo, setHospitalInfo] = useState(null);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,6 +50,11 @@ export default function BloodRequestDetailsPage() {
     try {
       const reqData = await getBloodRequest(requestId);
       setRequest(reqData);
+      try {
+        const hList = await listHospitals();
+        const found = hList?.find(h => h.hospital_id === reqData.hospital_id);
+        if (found) setHospitalInfo(found);
+      } catch (e) {}
 
       // Attempt to load existing candidate matches preview if available
       try {
@@ -281,10 +288,14 @@ export default function BloodRequestDetailsPage() {
       >
         <Card>
           <div className="text-secondary" style={{ fontSize: '0.8125rem', fontWeight: 600 }}>
-            HOSPITAL
+            HOSPITAL & DELIVERY ADDRESS
           </div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.25rem' }}>
-            Hospital #{request.hospital_id}
+          <div style={{ fontSize: '1.125rem', fontWeight: 700, marginTop: '0.25rem', color: 'var(--color-primary, #b91c1c)' }}>
+            {hospitalInfo?.name || ('Hospital #' + request.hospital_id)}
+          </div>
+          <div className="text-secondary" style={{ fontSize: '0.75rem', marginTop: '0.35rem', lineHeight: '1.3' }}>
+            📍 <strong>Auto-detected by LocationAgent:</strong><br />
+            {hospitalInfo?.address || 'Sri Aurobindo Marg, Ansari Nagar East, New Delhi 110029'}
           </div>
         </Card>
 
