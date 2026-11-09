@@ -268,13 +268,49 @@ def register_calling_tools(server: MCPServer) -> MCPServer:
     return server
 
 
+def register_pharmacy_tools(server: MCPServer) -> MCPServer:
+    """Register Pharmacy and Truemeds substitute tools onto an MCPServer instance."""
+    from app.mcp.tools.pharmacy_tool import (
+        FIND_SUBSTITUTES_TOOL_NAME,
+        FIND_SUBSTITUTES_TOOL_DESC,
+        FIND_SUBSTITUTES_INPUT_SCHEMA,
+        FIND_SUBSTITUTES_OUTPUT_SCHEMA,
+        handle_find_medicine_substitutes,
+        CHECK_STOCK_TOOL_NAME,
+        CHECK_STOCK_TOOL_DESC,
+        CHECK_STOCK_INPUT_SCHEMA,
+        CHECK_STOCK_OUTPUT_SCHEMA,
+        handle_check_pharmacy_stock,
+    )
+
+    server.register_tool(
+        MCPTool(
+            name=FIND_SUBSTITUTES_TOOL_NAME,
+            description=FIND_SUBSTITUTES_TOOL_DESC,
+            input_schema=FIND_SUBSTITUTES_INPUT_SCHEMA,
+            output_schema=FIND_SUBSTITUTES_OUTPUT_SCHEMA,
+            handler=handle_find_medicine_substitutes,
+        )
+    )
+    server.register_tool(
+        MCPTool(
+            name=CHECK_STOCK_TOOL_NAME,
+            description=CHECK_STOCK_TOOL_DESC,
+            input_schema=CHECK_STOCK_INPUT_SCHEMA,
+            output_schema=CHECK_STOCK_OUTPUT_SCHEMA,
+            handler=handle_check_pharmacy_stock,
+        )
+    )
+    return server
+
+
 def create_extended_mcp_server() -> MCPServer:
-    """Factory creating an MCPServer pre-configured with core, communication, and calling tools."""
+    """Factory creating an MCPServer pre-configured with core, communication, calling, and pharmacy tools."""
     server = create_default_mcp_server()
     register_communication_tools(server)
     register_calling_tools(server)
+    register_pharmacy_tools(server)
     return server
 
 
 default_mcp_server = create_default_mcp_server()
-
