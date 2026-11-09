@@ -1,4 +1,4 @@
-"""Agents package for Blood Donation Matching System."""
+"""Agents package for Blood & Medicine Emergency Coordination System."""
 
 from app.agents.requirement_agent import RequirementAgent
 from app.agents.matching_agent import MatchingAgent
@@ -7,6 +7,7 @@ from app.agents.coordinator_agent import CoordinatorAgent
 from app.agents.notification_agent import NotificationAgent
 from app.agents.communication_agent import CommunicationAgent
 from app.agents.calling_agent import CallingAgent
+from app.agents.pharmacy_agent import PharmacyAgent
 
 __all__ = [
     "RequirementAgent",
@@ -16,5 +17,5 @@ __all__ = [
     "NotificationAgent",
     "CommunicationAgent",
     "CallingAgent",
+    "PharmacyAgent",
 ]
-

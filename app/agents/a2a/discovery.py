@@ -13,6 +13,7 @@ DEFAULT_AGENT_URLS: Dict[str, str] = {
     "notification": "http://127.0.0.1:8104",
     "communication": "http://127.0.0.1:8105",
     "calling": "http://127.0.0.1:8106",
+    "pharmacy": "http://127.0.0.1:8107",
 }
 
 SKILL_BY_AGENT: Dict[str, str] = {
@@ -23,6 +24,7 @@ SKILL_BY_AGENT: Dict[str, str] = {
     "notification": "notify",
     "communication": "communicate",
     "calling": "call",
+    "pharmacy": "fulfill-pharmacy-order",
 }
 
 AGENT_BY_SKILL: Dict[str, str] = {v: k for k, v in SKILL_BY_AGENT.items()}

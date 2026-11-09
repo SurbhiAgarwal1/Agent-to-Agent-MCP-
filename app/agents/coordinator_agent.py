@@ -36,6 +36,7 @@ from app.agents.matching_agent import MatchingAgent
 from app.agents.notification_agent import NotificationAgent
 from app.agents.communication_agent import CommunicationAgent
 from app.agents.calling_agent import CallingAgent
+from app.agents.pharmacy_agent import PharmacyAgent
 from app.agents.requirement_agent import RequirementAgent
 from app.llm.client import record_usage
 from app.llm.reasoners import (
@@ -107,12 +108,14 @@ class CoordinatorAgent:
             self.notif_agent = NotificationAgent(bus=self.bus)
             self.comm_agent = CommunicationAgent(db=self.db, bus=self.bus)
             self.calling_agent = CallingAgent(db=self.db, bus=self.bus)
+            self.pharmacy_agent = PharmacyAgent(db=self.db)
             self.bus.register_agent("RequirementAgent", self.req_agent.handle_a2a_message)
             self.bus.register_agent("MatchingAgent", self.match_agent.handle_a2a_message)
             self.bus.register_agent("LocationAgent", self.loc_agent.handle_a2a_message)
             self.bus.register_agent("NotificationAgent", self.notif_agent.handle_a2a_message)
             self.bus.register_agent("CommunicationAgent", self.comm_agent.handle_a2a_message)
             self.bus.register_agent("CallingAgent", self.calling_agent.handle_a2a_message)
+            self.bus.register_agent("PharmacyAgent", self.pharmacy_agent.handle_a2a_message)
 
     def generate_plan(self, user_request: str) -> tuple[BloodRequestPlan, Dict[str, Any]]:
         """Use the configured provider and validate its untrusted structured output."""
