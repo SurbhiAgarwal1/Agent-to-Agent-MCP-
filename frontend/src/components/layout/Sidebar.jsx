@@ -77,6 +77,10 @@ export function Sidebar({ isOpen, onClose }) {
               <span>📊</span><span>Dashboard</span>
             </NavLink>
 
+            <NavLink to="/pharmacy" style={navLinkStyle} onClick={onClose}>
+              <span>💊</span><span>Pharmacy & Medicine</span>
+            </NavLink>
+
             {isHospitalStaff && (
               <>
                 <NavLink to="/blood-requests" style={navLinkStyle} onClick={onClose} end>

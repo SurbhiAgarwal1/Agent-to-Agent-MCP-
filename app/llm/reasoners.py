@@ -1,27 +1,28 @@
-"""Interchangeable deterministic and Gemini-backed request planners."""
+"""Interchangeable deterministic and Gemini-backed request planners for Blood & Medicine delivery."""
 
-from __future__ import annotations
-
+from abc import ABC, abstractmethod
 import json
+import logging
 import os
 import re
 import time
-from abc import ABC, abstractmethod
 from typing import Any
 
-from app.llm.schemas import ALLOWED_CAPABILITIES, BloodRequestPlan, ReasoningResult
+from app.llm.schemas import ALLOWED_CAPABILITIES, ReasoningResult
+
+logger = logging.getLogger("app.llm.reasoners")
 
 
 class ReasonerError(RuntimeError):
-    """Base class for safe, user-facing reasoning provider errors."""
+    """Base exception for reasoner failures."""
 
 
 class GeminiConfigurationError(ReasonerError):
-    pass
+    """Raised when the Gemini provider cannot be initialized from the environment."""
 
 
 class GeminiProviderError(ReasonerError):
-    pass
+    """Raised when Gemini returns an error status or invalid output."""
 
 
 class LLMReasoner(ABC):
@@ -33,7 +34,7 @@ class LLMReasoner(ABC):
 
 
 class MockReasoner(LLMReasoner):
-    """Deterministic, local-only planner. It never reads credentials or opens sockets."""
+    """Deterministic, local-only planner. Handles both blood requests and medicine delivery."""
 
     def __init__(self, *, scenario: str = "normal") -> None:
         self.scenario = scenario
@@ -43,8 +44,8 @@ class MockReasoner(LLMReasoner):
         blood_match = re.search(r"\b(AB|A|B|O)\s*([+-])(?!\w)", text, re.IGNORECASE)
         units_match = re.search(r"\b(\d+)\s*(?:units?|bags?|pints?|packs?)\b", text, re.IGNORECASE)
         location_match = re.search(
-            r"\b(?:at|in|near)\s+([A-Za-z][A-Za-z0-9 .'-]*?)"
-            r"(?:\s+(hospital|clinic|medical center|center)\b|[,;.!?]|$)",
+            r"\b(?:at|in|near|to)\s+([A-Za-z][A-Za-z0-9 .'-]*?)"
+            r"(?:\s+(hospital|clinic|medical center|center|pharmacy)\b|[,;.!?]|$)",
             text,
             re.IGNORECASE,
         )
@@ -59,24 +60,54 @@ class MockReasoner(LLMReasoner):
         location = None
         if location_match:
             location = " ".join(part for part in location_match.groups() if part).strip()
+
+        # Extract medicines (e.g. "2 strips of Dolo 650", "Augmentin", "Paracetamol")
+        known_meds = [
+            "Dolo 650", "Calpol 650", "Augmentin 625 Duo", "Augmentin", "Moxikind-CV 625",
+            "Azithral 500", "Azithromycin", "Pan 40", "Pantocid 40", "Paracetamol"
+        ]
+        medicines_list = []
+        for med in known_meds:
+            med_pattern = re.compile(rf"(?:(\d+)\s*(?:strips?|tablets?|boxes?|bottles?|packs?)?\s*(?:of\s*)?)?\b{re.escape(med)}\b", re.IGNORECASE)
+            m = med_pattern.search(text)
+            if m:
+                qty_str = m.group(1)
+                qty = int(qty_str) if qty_str else 1
+                medicines_list.append({
+                    "name": med,
+                    "quantity": qty,
+                    "allow_substitute": True,
+                })
+
+        blood_group = (
+            blood_match.group(1).upper() + blood_match.group(2)
+            if blood_match else None
+        )
+        units_req = int(units_match.group(1)) if units_match else None
+
+        req_type = "blood"
+        if medicines_list and blood_group:
+            req_type = "combined"
+        elif medicines_list:
+            req_type = "medicine"
+
         plan: dict[str, Any] = {
-            "blood_group": (
-                blood_match.group(1).upper() + blood_match.group(2)
-                if blood_match else None
-            ),
-            "units_required": int(units_match.group(1)) if units_match else None,
+            "request_type": req_type,
+            "blood_group": blood_group,
+            "units_required": units_req,
+            "medicines": medicines_list,
             "location": location,
             "urgency": urgency,
             "required_capabilities": list(ALLOWED_CAPABILITIES),
         }
 
-        # Deterministic negative cases exercise Coordinator validation, not any network.
+        # Deterministic negative cases exercise Coordinator validation
         if self.scenario == "invalid_capability":
             plan["required_capabilities"] = [*ALLOWED_CAPABILITIES, "execute_shell"]
         elif self.scenario == "malformed_plan":
             plan = {"unexpected": "malformed plan"}
         elif self.scenario == "missing_required_field":
-            plan.pop("units_required")
+            plan.pop("required_capabilities")
         elif self.scenario != "normal":
             raise ValueError(f"Unknown mock scenario: {self.scenario}")
 
@@ -112,7 +143,6 @@ class GeminiReasoner(LLMReasoner):
         if not self.api_key:
             raise GeminiConfigurationError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini.")
         if self._client is None:
-            # Lazy import/client creation lets mock mode start without Gemini credentials.
             from google import genai
             from google.genai import types
 
@@ -133,10 +163,12 @@ class GeminiReasoner(LLMReasoner):
     def generate_plan(self, user_request: str) -> ReasoningResult:
         client = self._client_for_request()
         prompt = (
-            "Convert this blood donation request into the supplied JSON schema. "
-            "Do not provide reasoning text. Use null for missing blood_group, units_required, or location. "
-            "Normalize urgency to LOW, MEDIUM, HIGH, or CRITICAL. Set required_capabilities to exactly "
-            f"{json.dumps(ALLOWED_CAPABILITIES)}. Never emit URLs, tools, functions, endpoints, or code.\n\n"
+            "Convert this emergency healthcare / blood / medicine delivery request into JSON according to the schema. "
+            "Extract request_type ('blood', 'medicine', or 'combined'). "
+            "Extract blood_group (null if none), units_required (null if none), "
+            "medicines list ([{name, quantity, allow_substitute}]), and location (hospital or delivery address). "
+            "Do not provide reasoning text. Normalize urgency to LOW, MEDIUM, HIGH, or CRITICAL. "
+            f"Set required_capabilities to {json.dumps(ALLOWED_CAPABILITIES)}. Never emit URLs, tools, functions, or code.\n\n"
             f"Request: {user_request}"
         )
         last_error: Exception | None = None
@@ -149,67 +181,48 @@ class GeminiReasoner(LLMReasoner):
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        response_schema=BloodRequestPlan,
-                        temperature=0,
+                        temperature=0.0,
                     ),
                 )
-                parsed = getattr(response, "parsed", None)
-                if isinstance(parsed, BloodRequestPlan):
-                    plan = parsed.model_dump(mode="json")
-                elif isinstance(parsed, dict):
-                    plan = parsed
-                else:
-                    response_text = getattr(response, "text", None)
-                    if not response_text:
-                        raise GeminiProviderError("Gemini returned no structured plan.")
-                    try:
-                        plan = json.loads(response_text)
-                    except (TypeError, json.JSONDecodeError) as exc:
-                        raise GeminiProviderError("Gemini returned malformed JSON.") from exc
-                metadata = getattr(response, "usage_metadata", None)
+                raw_text = response.text or ""
+                if not raw_text.strip():
+                    raise GeminiProviderError("Gemini returned no structured plan.")
+                try:
+                    plan = json.loads(raw_text)
+                except json.JSONDecodeError as exc:
+                    raise GeminiProviderError("Gemini returned malformed JSON.") from exc
+
+                usage_meta = getattr(response, "usage_metadata", None)
                 usage = {
-                    "input_tokens": getattr(metadata, "prompt_token_count", None),
-                    "output_tokens": getattr(metadata, "candidates_token_count", None),
-                    "total_tokens": getattr(metadata, "total_token_count", None),
+                    "input_tokens": getattr(usage_meta, "prompt_token_count", None),
+                    "output_tokens": getattr(usage_meta, "candidates_token_count", None),
+                    "total_tokens": getattr(usage_meta, "total_token_count", None),
                     "is_mock": False,
                 }
                 return ReasoningResult(
                     plan=plan,
                     provider="gemini",
-                    model=getattr(response, "model_version", None) or self.model,
+                    model=self.model,
                     usage=usage,
                 )
             except GeminiProviderError:
                 raise
             except Exception as exc:
                 last_error = exc
-                if attempt >= self.max_retries or not _is_retryable_provider_error(exc):
-                    break
-                self._sleep(min(0.25 * (2 ** attempt), 2.0))
-        status = _provider_status(last_error)
-        category = "rate limited" if status == 429 else "unavailable or rejected the request"
+                if attempt < self.max_retries:
+                    self._sleep(0.5 * (2**attempt))
+                    continue
+
+        category = "timeout" if "timeout" in str(last_error).lower() else "call failed"
+        status = getattr(last_error, "status_code", getattr(last_error, "code", "network"))
         raise GeminiProviderError(f"Gemini provider {category} (HTTP {status}).") from last_error
 
 
-def _provider_status(error: Exception | None) -> int | None:
-    status = getattr(error, "status_code", None) or getattr(error, "code", None)
-    return status if isinstance(status, int) else None
-
-
-def _is_retryable_provider_error(error: Exception) -> bool:
-    status = _provider_status(error)
-    if status == 429 or (isinstance(status, int) and status >= 500):
-        return True
-    description = (type(error).__name__ + " " + str(error)).lower()
-    return isinstance(error, (TimeoutError, ConnectionError)) or "timeout" in description or "connection" in description
-
-
 def create_reasoner(provider: str | None = None) -> LLMReasoner:
-    """Select the configured planner. Mock is the safe, keyless default."""
+    """Instantiate the active reasoner from parameter or environment."""
     selected = (provider or os.getenv("LLM_PROVIDER", "mock")).strip().lower()
     if selected in {"mock", "dummy"}:
         return MockReasoner()
     if selected == "gemini":
         return GeminiReasoner()
     raise ValueError(f"Unsupported LLM_PROVIDER '{selected}'. Choose 'mock' or 'gemini'.")
-

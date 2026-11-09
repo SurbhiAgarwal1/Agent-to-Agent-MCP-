@@ -12,6 +12,7 @@ import DashboardPage from '../pages/DashboardPage.jsx';
 import BloodRequestsPage from '../pages/BloodRequestsPage.jsx';
 import CreateBloodRequestPage from '../pages/CreateBloodRequestPage.jsx';
 import BloodRequestDetailsPage from '../pages/BloodRequestDetailsPage.jsx';
+import PharmacyCatalogPage from '../pages/PharmacyCatalogPage.jsx';
 import NotificationsPage from '../pages/NotificationsPage.jsx';
 import ProfilePage from '../pages/ProfilePage.jsx';
 import AdminDashboardPage from '../pages/AdminDashboardPage.jsx';
@@ -38,6 +39,7 @@ export default function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/pharmacy" element={<PharmacyCatalogPage />} />
 
         {/* Hospital Staff & Admin Blood Requests */}
         <Route
