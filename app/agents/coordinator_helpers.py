@@ -361,7 +361,8 @@ def invoke_coordinator_from_gateway(
             if os.getenv("COORDINATOR_REQUIRE_A2A", "").strip().lower() in {"1", "true", "yes"}:
                 raise
 
-    coordinator = CoordinatorAgent(db=db, network=True)
+    use_network = os.getenv("COORDINATOR_USE_NETWORK", "").strip().lower() in {"1", "true", "yes"}
+    coordinator = CoordinatorAgent(db=db, network=use_network)
     if mode == "orchestrate":
         return coordinator.orchestrate(request_id=request_id, persist=persist)
     return coordinator.coordinate(request_input=request_id, persist=persist)
