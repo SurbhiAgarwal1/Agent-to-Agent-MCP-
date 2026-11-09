@@ -27,7 +27,9 @@ def process_natural_language_request(
     current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
     """Parse natural language blood request, validate, coordinate, and summarize."""
-    agent = NLInterfaceAgent(db=db, network=True)
+    import os
+    use_network = os.getenv("COORDINATOR_USE_NETWORK", "").strip().lower() in {"1", "true", "yes"}
+    agent = NLInterfaceAgent(db=db, network=use_network)
     allowed = None if current_user.role == UserRole.ADMIN else active_hospital_ids(db, current_user.id)
     result = agent.process_request(
     payload.text,
