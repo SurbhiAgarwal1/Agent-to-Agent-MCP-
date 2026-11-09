@@ -57,8 +57,27 @@ class MockReasoner(LLMReasoner):
         elif re.search(r"\b(routine|low|scheduled)\b", text, re.IGNORECASE):
             urgency = "LOW"
 
+        # Location extraction: recognize preposition patterns or direct mentions of premier hospitals
+        known_hospitals = [
+            "AIIMS Apex Trauma Center & Hospital", "AIIMS Apex Trauma Center", "AIIMS Trauma Center", "AIIMS",
+            "Safdarjung Emergency Trauma Hospital", "Safdarjung Hospital", "Safdarjung",
+            "Indraprastha Apollo Super Speciality Hospital", "Indraprastha Apollo Hospital", "Apollo Hospital", "Apollo",
+            "Max Super Speciality Hospital & Trauma Care", "Max Super Speciality Hospital", "Max Hospital", "Max Saket",
+            "Sir Ganga Ram Multi-Speciality Hospital", "Sir Ganga Ram Hospital", "Ganga Ram",
+            "Fortis Memorial Critical Care & Research Institute", "Fortis Memorial", "Fortis Hospital", "Fortis",
+            "Medanta - The Medicity Multi-Organ Transplant Hospital", "Medanta - The Medicity", "Medanta The Medicity", "Medanta",
+            "BLK-Max Super Speciality Hospital", "BLK-Max Hospital", "BLK Hospital",
+            "Holy Family Emergency & Critical Care Hospital", "Holy Family Hospital", "Holy Family",
+            "Dr. Ram Manohar Lohia (RML) Hospital & PGIMER", "Ram Manohar Lohia Hospital", "RML Hospital", "RML",
+        ]
+
         location = None
-        if location_match:
+        for hosp in known_hospitals:
+            if re.search(rf"\b{re.escape(hosp)}\b", text, re.IGNORECASE):
+                location = hosp
+                break
+
+        if not location and location_match:
             location = " ".join(part for part in location_match.groups() if part).strip()
 
         # Extract medicines (e.g. "2 strips of Dolo 650", "Augmentin", "Paracetamol")
