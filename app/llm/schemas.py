@@ -1,7 +1,7 @@
-"""Validated application plan returned by all LLM providers."""
+"""Validated application plan returned by all LLM providers for Blood and Medicine requests."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -13,21 +13,39 @@ class Capability(str, Enum):
     BLOOD_MATCHING = "blood_matching"
     LOCATION_CALCULATION = "location_calculation"
     NOTIFICATION = "notification"
+    MEDICINE_DISCOVERY = "medicine_discovery"
+    SUBSTITUTE_MATCHING = "substitute_matching"
+    PHARMACY_ROUTING = "pharmacy_routing"
 
 
 ALLOWED_CAPABILITIES = [item.value for item in Capability]
+BASE_CAPABILITIES = [
+    Capability.REQUIREMENT_VALIDATION.value,
+    Capability.BLOOD_MATCHING.value,
+    Capability.LOCATION_CALCULATION.value,
+    Capability.NOTIFICATION.value,
+]
+
+
+class MedicineRequestItem(BaseModel):
+    """Specific medicine extracted from user prompt."""
+    name: str
+    quantity: int = Field(default=1, ge=1)
+    allow_substitute: bool = True
 
 
 class BloodRequestPlan(BaseModel):
-    """Small, allowlisted plan. It deliberately has no tool or endpoint fields."""
+    """Allowlisted plan covering emergency blood units and online medicine delivery."""
 
     model_config = ConfigDict(extra="forbid")
 
-    blood_group: str | None
-    units_required: int | None = Field(ge=1)
-    location: str | None
-    urgency: UrgencyLevel
-    required_capabilities: list[Capability]
+    request_type: str = Field(default="blood", description="'blood', 'medicine', or 'combined'")
+    blood_group: str | None = None
+    units_required: int | None = Field(default=None, ge=1)
+    medicines: List[MedicineRequestItem] = Field(default_factory=list)
+    location: str | None = None
+    urgency: UrgencyLevel = UrgencyLevel.MEDIUM
+    required_capabilities: list[Capability] = Field(default_factory=lambda: [Capability(c) for c in BASE_CAPABILITIES])
 
     @field_validator("blood_group")
     @classmethod
@@ -58,11 +76,21 @@ class BloodRequestPlan(BaseModel):
         return value or None
 
     @model_validator(mode="after")
-    def require_supported_workflow(self):
+    def validate_plan_requirements(self):
+        # Validate that basic capabilities exist
         selected = {capability.value for capability in self.required_capabilities}
-        missing = set(ALLOWED_CAPABILITIES) - selected
-        if missing:
-            raise ValueError(f"required_capabilities is missing: {', '.join(sorted(missing))}")
+        base_set = set(BASE_CAPABILITIES)
+        missing_base = base_set - selected
+        if missing_base:
+            # Auto-populate missing base capabilities for backwards compatibility
+            self.required_capabilities.extend([Capability(m) for m in missing_base])
+
+        # If medicines are included, ensure pharmacy capabilities are tagged
+        if self.medicines:
+            self.request_type = "combined" if self.blood_group else "medicine"
+            for med_cap in [Capability.MEDICINE_DISCOVERY, Capability.SUBSTITUTE_MATCHING, Capability.PHARMACY_ROUTING]:
+                if med_cap not in self.required_capabilities:
+                    self.required_capabilities.append(med_cap)
         return self
 
 
@@ -74,4 +102,3 @@ class ReasoningResult(BaseModel):
     model: str
     usage: dict[str, int | None | str | bool]
     fallback_used: bool = False
-
