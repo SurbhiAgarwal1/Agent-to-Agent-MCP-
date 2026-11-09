@@ -13,7 +13,6 @@ export default function MatchesList({
 }) {
   const [rejectModalMatch, setRejectModalMatch] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [completeModalMatch, setCompleteModalMatch] = useState(null);
 
   if (!matches || matches.length === 0) {
     return (
@@ -36,15 +35,12 @@ export default function MatchesList({
     setRejectModalMatch(null);
   };
 
-  const handleOpenComplete = (match) => {
-    setCompleteModalMatch(match);
-  };
-
-  const handleConfirmComplete = async () => {
-    if (!completeModalMatch) return;
-    const matchId = completeModalMatch.match_id || completeModalMatch.id;
-    await onComplete(matchId);
-    setCompleteModalMatch(null);
+  // Direct 1-Click trigger into the AI 3D modal flow
+  const handleDirectComplete = (match) => {
+    const matchId = match.match_id || match.id;
+    if (onComplete) {
+      onComplete(matchId);
+    }
   };
 
   return (
@@ -87,7 +83,7 @@ export default function MatchesList({
                   </td>
                   <td>
                     <div style={{ fontWeight: 500 }}>
-                      {m.source_name || `${sourceLabel} #${m.source_id || '—'}`}
+                      {m.name || m.source_name || `${sourceLabel} #${m.source_id || '—'}`}
                     </div>
                     {m.address && (
                       <div className="text-secondary" style={{ fontSize: '0.75rem' }}>
@@ -103,17 +99,28 @@ export default function MatchesList({
                     <StatusBadge status={matchStatus} />
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <div className="btn-group" style={{ justifyContent: 'flex-end' }}>
+                    <div className="btn-group" style={{ justifyContent: 'flex-end', gap: '0.4rem' }}>
                       {canComplete && onComplete && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 600,
+                            borderRadius: '6px',
+                            boxShadow: '0 2px 4px rgba(16, 185, 129, 0.25)',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                          }}
                           disabled={actionLoading}
-                          onClick={() => handleOpenComplete(m)}
-                          title="Confirm match fulfillment"
+                          onClick={() => handleDirectComplete(m)}
+                          title="Confirm and place order via LocationAgent"
                         >
-                          Complete
-                        </Button>
+                          <span>✓</span> Complete
+                        </button>
                       )}
                       {canReject && onReject && (
                         <Button
@@ -158,11 +165,10 @@ export default function MatchesList({
       >
         <p>
           Are you sure you want to reject match #{rejectModalMatch?.match_id || rejectModalMatch?.id} ({rejectModalMatch?.source_type})?
-          This will release any reserved units and exclude this source.
         </p>
-        <div className="form-group" style={{ marginTop: '1rem' }}>
+        <div style={{ marginTop: '1rem' }}>
           <label className="form-label" htmlFor="reject-reason">
-            Rejection Reason (Optional):
+            Reason for Rejection (Optional)
           </label>
           <input
             id="reject-reason"
@@ -174,28 +180,6 @@ export default function MatchesList({
             maxLength={300}
           />
         </div>
-      </Modal>
-
-      {/* Completion Modal */}
-      <Modal
-        isOpen={!!completeModalMatch}
-        onClose={() => setCompleteModalMatch(null)}
-        title="Complete Match Delivery"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setCompleteModalMatch(null)} disabled={actionLoading}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleConfirmComplete} loading={actionLoading}>
-              Confirm Delivery
-            </Button>
-          </>
-        }
-      >
-        <p>
-          Confirm that match #{completeModalMatch?.match_id || completeModalMatch?.id} has arrived and units have been delivered.
-          This will deduct units from blood bank inventory or initiate donor cool-down, transitioning the blood request fulfillment state.
-        </p>
       </Modal>
     </div>
   );

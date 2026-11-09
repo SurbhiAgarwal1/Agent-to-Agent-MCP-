@@ -38,10 +38,10 @@ export default function BloodRequestDetailsPage() {
   const [coordinationResult, setCoordinationResult] = useState(null);
   const [matchActionLoading, setMatchActionLoading] = useState(false);
 
-  // Animated Order Placement & Location Detection Simulation State
+  // 3D AI Holographic Order Flow State
   const [orderModal, setOrderModal] = useState({
     isOpen: false,
-    step: 0, // 0: Idle, 1: Detecting Location, 2: Arranging Sources, 3: Order Placed & Fulfilled!
+    step: 0, // 0: Idle, 1: Detecting Location, 2: Arranging Sources, 3: Order Placed!
     targetMatch: null,
   });
 
@@ -125,34 +125,33 @@ export default function BloodRequestDetailsPage() {
     }
   };
 
-  // Match fulfillment action with animated LocationAgent Detection & Order Placement flow
+  // 3D AI Complete Match Flow
   const handleCompleteMatch = async (matchId) => {
     const matchObj = matches.find(m => (m.match_id || m.id) === matchId);
     
-    // Open animated simulation modal
     setOrderModal({
       isOpen: true,
-      step: 1, // Step 1: LocationAgent auto-detecting hospital & route
+      step: 1, // Step 1: AI Radar Location Detection
       targetMatch: matchObj,
     });
 
-    // Step 1 -> Step 2 after 1.4s
+    // Step 1 -> Step 2 after 1.5s
     setTimeout(() => {
       setOrderModal(prev => ({ ...prev, step: 2 }));
-    }, 1400);
+    }, 1500);
 
-    // Step 2 -> Execute Backend API & transition to Step 3 (Order Placed & Fulfilled!) after 2.6s
+    // Step 2 -> Execute Backend API & transition to Step 3 (Order Placed!)
     setTimeout(async () => {
       try {
         await completeMatch(requestId, matchId);
         setOrderModal(prev => ({ ...prev, step: 3 }));
-        setSuccessMessage(`Order placed! Match #${matchId} completed and blood units dispatched.`);
+        setSuccessMessage(`Order placed! Units dispatched.`);
         await loadData();
       } catch (err) {
         setError(err.message || `Failed to complete match #${matchId}.`);
         setOrderModal({ isOpen: false, step: 0, targetMatch: null });
       }
-    }, 2800);
+    }, 3200);
   };
 
   // Match fulfillment action: reject match
@@ -203,6 +202,23 @@ export default function BloodRequestDetailsPage() {
 
   return (
     <div>
+      <style>{`
+        @keyframes pulseGlow {
+          0% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); transform: scale(1); }
+          50% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.85); transform: scale(1.05); }
+          100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); transform: scale(1); }
+        }
+        @keyframes spinRadar {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes float3D {
+          0% { transform: translateY(0px) rotateX(10deg); }
+          50% { transform: translateY(-8px) rotateX(15deg); }
+          100% { transform: translateY(0px) rotateX(10deg); }
+        }
+      `}</style>
+
       {/* Top Breadcrumb & Actions */}
       <div
         style={{
@@ -401,7 +417,7 @@ export default function BloodRequestDetailsPage() {
         />
       </Card>
 
-      {/* Interactive Location Detection & Order Placement Modal */}
+      {/* 3D Holographic AI LocationAgent & Order Placement Modal */}
       {orderModal.isOpen && (
         <div
           style={{
@@ -410,123 +426,211 @@ export default function BloodRequestDetailsPage() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 9999,
-            padding: '1rem',
+            padding: '1.5rem',
+            perspective: '1000px',
           }}
         >
           <div
             style={{
-              backgroundColor: '#fff',
-              borderRadius: '12px',
-              maxWidth: '520px',
+              background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 100%)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              borderRadius: '24px',
+              maxWidth: '540px',
               width: '100%',
-              padding: '2rem',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              padding: '2.5rem 2rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.25)',
               textAlign: 'center',
-              animation: 'fadeIn 0.3s ease',
+              color: '#f8fafc',
+              animation: 'float3D 4s ease-in-out infinite',
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            {/* Step 1: LocationAgent Detecting Location */}
+            {/* Top AI Badge */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.25rem 0.85rem',
+                borderRadius: '9999px',
+                background: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '1.25rem',
+              }}
+            >
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }} />
+              Autonomous A2A LocationAgent Active
+            </div>
+
+            {/* Step 1: AI Radar Location Detection */}
             {orderModal.step === 1 && (
               <div>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem', animation: 'bounce 1s infinite' }}>
+                <div
+                  style={{
+                    width: '90px',
+                    height: '90px',
+                    margin: '0 auto 1.5rem',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(56,189,248,0.2) 0%, rgba(15,23,42,0.8) 70%)',
+                    border: '2px solid #38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '2.5rem',
+                    animation: 'pulseGlow 2s infinite',
+                    position: 'relative',
+                  }}
+                >
                   📍
                 </div>
-                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem', color: '#1e293b' }}>
-                  LocationAgent Detecting Hospital Location...
+                <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#38bdf8', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>
+                  LocationAgent Detecting Hospital...
                 </h3>
-                <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.25rem' }}>
-                  Triangulating delivery destination and calculating optimal emergency transit route.
+                <p style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '1.5rem' }}>
+                  Computing multi-source GPS routing and calculating emergency transit distance.
                 </p>
+
                 <div
                   style={{
-                    padding: '0.75rem 1rem',
-                    backgroundColor: '#f1f5f9',
-                    borderRadius: '8px',
+                    padding: '1rem',
+                    background: 'rgba(30, 41, 59, 0.7)',
+                    border: '1px solid rgba(148, 163, 184, 0.15)',
+                    borderRadius: '12px',
                     fontSize: '0.85rem',
-                    color: '#334155',
+                    color: '#e2e8f0',
                     textAlign: 'left',
+                    lineHeight: '1.6',
                   }}
                 >
-                  <div>🏥 <strong>Hospital:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
-                  <div>📍 <strong>Address:</strong> {hospitalInfo?.address || 'Sri Aurobindo Marg, Ansari Nagar East, New Delhi 110029'}</div>
-                  <div>🧭 <strong>Coordinates:</strong> {hospitalInfo?.latitude || '28.5672'}° N, {hospitalInfo?.longitude || '77.2100'}° E</div>
+                  <div>🏥 <strong style={{ color: '#38bdf8' }}>Hospital:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
+                  <div>📍 <strong style={{ color: '#38bdf8' }}>Location:</strong> {hospitalInfo?.address || 'Sri Aurobindo Marg, Ansari Nagar East, New Delhi 110029'}</div>
+                  <div>🧭 <strong style={{ color: '#38bdf8' }}>Coordinates:</strong> {hospitalInfo?.latitude || '28.5672'}° N, {hospitalInfo?.longitude || '77.2100'}° E</div>
                 </div>
               </div>
             )}
 
-            {/* Step 2: Sources being arranged */}
+            {/* Step 2: Sources Being Arranged */}
             {orderModal.step === 2 && (
               <div>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
-                  🔄
-                </div>
-                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem', color: '#0284c7' }}>
-                  Sources Being Arranged...
-                </h3>
-                <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.25rem' }}>
-                  Reserving units from closest vault: <strong>{orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'AIIMS Department of Transfusion Medicine'}</strong>
-                </p>
                 <div
                   style={{
-                    padding: '0.75rem 1rem',
-                    backgroundColor: '#e0f2fe',
-                    borderRadius: '8px',
-                    fontSize: '0.85rem',
-                    color: '#0369a1',
-                    textAlign: 'left',
+                    width: '90px',
+                    height: '90px',
+                    margin: '0 auto 1.5rem',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(16,185,129,0.2) 0%, rgba(15,23,42,0.8) 70%)',
+                    border: '2px solid #10b981',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '2.5rem',
+                    animation: 'pulseGlow 2s infinite',
                   }}
                 >
-                  <div>✓ <strong>Units Reserved:</strong> {request.units_required} units ({request.blood_group})</div>
-                  <div>✓ <strong>Transit ETA:</strong> {orderModal.targetMatch?.estimated_time || '~1 min straight-line'}</div>
-                  <div>✓ <strong>Urgency Protocol:</strong> {request.urgency}</div>
+                  🔄
+                </div>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', marginBottom: '0.5rem' }}>
+                  Sources Being Arranged...
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '1.5rem' }}>
+                  Locking stock hold reservation with <strong>{orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'AIIMS Transfusion Center'}</strong>.
+                </p>
+
+                <div
+                  style={{
+                    padding: '1rem',
+                    background: 'rgba(30, 41, 59, 0.7)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: '12px',
+                    fontSize: '0.85rem',
+                    color: '#e2e8f0',
+                    textAlign: 'left',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  <div>✓ <strong style={{ color: '#10b981' }}>Reserved Units:</strong> {request.units_required} units ({request.blood_group})</div>
+                  <div>✓ <strong style={{ color: '#10b981' }}>Transit ETA:</strong> {orderModal.targetMatch?.estimated_time || '~1 min straight-line'}</div>
+                  <div>✓ <strong style={{ color: '#10b981' }}>Priority Protocol:</strong> Emergency Dispatch Locked</div>
                 </div>
               </div>
             )}
 
-            {/* Step 3: Order Placed & Fulfilled! */}
+            {/* Step 3: Order Placed! */}
             {orderModal.step === 3 && (
               <div>
-                <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>
+                <div
+                  style={{
+                    width: '90px',
+                    height: '90px',
+                    margin: '0 auto 1.5rem',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle, rgba(16,185,129,0.3) 0%, rgba(15,23,42,0.9) 70%)',
+                    border: '2px solid #34d399',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '3rem',
+                    boxShadow: '0 0 30px rgba(52, 211, 153, 0.5)',
+                  }}
+                >
                   🎉
                 </div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669', marginBottom: '0.5rem' }}>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#34d399', marginBottom: '0.5rem' }}>
                   Your Order Has Been Placed!
                 </h2>
-                <p style={{ fontSize: '0.95rem', color: '#475569', marginBottom: '1.25rem' }}>
-                  Blood units have been confirmed and dispatched. The request has been transitioned to <strong>FULFILLED</strong>.
+                <p style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '1.5rem' }}>
+                  Blood units confirmed and dispatched. Order transitioned to <strong>FULFILLED</strong>.
                 </p>
 
                 <div
                   style={{
-                    backgroundColor: '#ecfdf5',
-                    border: '1px solid #a7f3d0',
-                    borderRadius: '8px',
-                    padding: '1rem',
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    border: '1px solid rgba(52, 211, 153, 0.3)',
+                    borderRadius: '12px',
+                    padding: '1.15rem',
                     marginBottom: '1.5rem',
                     textAlign: 'left',
                     fontSize: '0.875rem',
+                    lineHeight: '1.6',
                   }}
                 >
-                  <div style={{ color: '#065f46', fontWeight: 600, marginBottom: '0.25rem' }}>
-                    ✓ Order Summary
+                  <div style={{ color: '#34d399', fontWeight: 700, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.75rem' }}>
+                    ✓ Order Confirmation Receipt
                   </div>
-                  <div>• <strong>Request:</strong> #{request.request_id}</div>
-                  <div>• <strong>Blood Group:</strong> {request.blood_group} ({request.units_required} Units)</div>
+                  <div>• <strong>Request ID:</strong> #{request.request_id}</div>
+                  <div>• <strong>Blood Requirement:</strong> {request.blood_group} ({request.units_required} Units)</div>
                   <div>• <strong>Delivering To:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
-                  <div>• <strong>Source:</strong> {orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'Blood Bank Vault'}</div>
+                  <div>• <strong>Source Provider:</strong> {orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'Blood Bank Vault'}</div>
                 </div>
 
                 <button
-                  className="btn btn-primary"
-                  style={{ width: '100%', padding: '0.75rem', fontSize: '1rem', backgroundColor: '#059669', borderColor: '#059669' }}
+                  style={{
+                    width: '100%',
+                    padding: '0.85rem',
+                    fontSize: '0.95rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    background: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)',
+                    border: 'none',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                    cursor: 'pointer',
+                  }}
                   onClick={() => setOrderModal({ isOpen: false, step: 0, targetMatch: null })}
                 >
-                  View Updated Order
+                  View Fulfilled Order
                 </button>
               </div>
             )}
