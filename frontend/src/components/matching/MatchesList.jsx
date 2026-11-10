@@ -9,6 +9,7 @@ export default function MatchesList({
   requestId,
   onComplete,
   onReject,
+  onCallVoice,
   actionLoading = false,
 }) {
   const [rejectModalMatch, setRejectModalMatch] = useState(null);
@@ -35,7 +36,7 @@ export default function MatchesList({
     setRejectModalMatch(null);
   };
 
-  // Direct 1-Click trigger into the AI 3D modal flow
+  // Direct 1-Click trigger into order flow
   const handleDirectComplete = (match) => {
     const matchId = match.match_id || match.id;
     if (onComplete) {
@@ -61,14 +62,13 @@ export default function MatchesList({
             </tr>
           </thead>
           <tbody>
-            {matches.map((m, idx) => {
-              const matchId = m.match_id || m.id || idx + 1;
-              const sourceType = m.source_type || 'SOURCE';
-              const sourceLabel = sourceType === 'BLOOD_BANK' ? 'Blood Bank' : sourceType === 'DONOR' ? 'Donor' : sourceType;
-              const distance = m.distance_km != null ? `${Number(m.distance_km).toFixed(1)} km` : '—';
-              const eta = m.estimated_time || (m.estimated_travel_time_minutes != null ? `${m.estimated_travel_time_minutes} min` : '—');
-              const score = m.priority_score != null ? Number(m.priority_score).toFixed(2) : '—';
-              const units = m.reserved_units ?? m.units ?? m.available_units ?? '—';
+            {matches.map((m) => {
+              const matchId = m.match_id || m.id;
+              const sourceLabel = m.source_type === 'BLOOD_BANK' ? 'Blood Bank' : 'Donor';
+              const distance = typeof m.distance_km === 'number' ? `${m.distance_km.toFixed(1)} km` : '-';
+              const eta = m.estimated_time || '-';
+              const score = typeof m.priority_score === 'number' ? m.priority_score.toFixed(2) : '-';
+              const units = m.reserved_units ?? m.units ?? m.available_units ?? '-';
               const matchStatus = m.status || 'PROPOSED';
               const canComplete = matchStatus === 'ACCEPTED' || matchStatus === 'PROPOSED';
               const canReject = matchStatus === 'ACCEPTED' || matchStatus === 'PROPOSED';
@@ -83,7 +83,7 @@ export default function MatchesList({
                   </td>
                   <td>
                     <div style={{ fontWeight: 500 }}>
-                      {m.name || m.source_name || `${sourceLabel} #${m.source_id || '—'}`}
+                      {m.name || m.source_name || `${sourceLabel} #${m.source_id || '-'}`}
                     </div>
                     {m.address && (
                       <div className="text-secondary" style={{ fontSize: '0.75rem' }}>
@@ -99,9 +99,34 @@ export default function MatchesList({
                     <StatusBadge status={matchStatus} />
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <div className="btn-group" style={{ justifyContent: 'flex-end', gap: '0.4rem' }}>
+                    <div className="btn-group" style={{ justifyContent: 'flex-end', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {onCallVoice && canComplete && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            backgroundColor: '#0284c7',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 600,
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.8rem',
+                            padding: '0.25rem 0.6rem',
+                          }}
+                          disabled={actionLoading}
+                          onClick={() => onCallVoice(m)}
+                          title="Trigger automated Voice Agent call to this source"
+                        >
+                          <span>📞</span> Call Agent
+                        </button>
+                      )}
                       {canComplete && onComplete && (
                         <button
+                          type="button"
                           className="btn btn-sm"
                           style={{
                             background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
@@ -114,10 +139,12 @@ export default function MatchesList({
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: '0.3rem',
+                            fontSize: '0.8rem',
+                            padding: '0.25rem 0.6rem',
                           }}
                           disabled={actionLoading}
                           onClick={() => handleDirectComplete(m)}
-                          title="Confirm and place order via LocationAgent"
+                          title="Confirm and complete blood delivery"
                         >
                           <span>✓</span> Complete
                         </button>
