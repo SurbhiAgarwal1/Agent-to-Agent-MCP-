@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { listBloodRequests } from '../api/bloodRequests';
 import { listHospitals } from '../api/hospitals';
+import { useHospital } from '../context/HospitalContext';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -11,12 +12,14 @@ import BloodGroupBadge from '../components/common/BloodGroupBadge';
 import EmptyState from '../components/common/EmptyState';
 
 export default function BloodRequestsPage() {
+  const { selectedHospitalId, selectHospital } = useHospital();
   const [requests, setRequests] = useState([]);
   const [hospitalsMap, setHospitalsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // Filters
+  const [hospitalFilter, setHospitalFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [urgencyFilter, setUrgencyFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -47,6 +50,7 @@ export default function BloodRequestsPage() {
   }, []);
 
   const filteredRequests = requests.filter((req) => {
+    if (hospitalFilter !== 'ALL' && String(req.hospital_id) !== String(hospitalFilter)) return false;
     if (statusFilter !== 'ALL' && req.status !== statusFilter) return false;
     if (urgencyFilter !== 'ALL' && req.urgency !== urgencyFilter) return false;
     if (searchTerm) {
@@ -102,6 +106,31 @@ export default function BloodRequestsPage() {
             borderBottom: '1px solid var(--border-color)',
           }}
         >
+          {/* Hospital Filter */}
+          <div style={{ minWidth: '200px' }}>
+            <label className="form-label" htmlFor="filter-hospital" style={{ fontSize: '0.8125rem' }}>
+              Filter by Hospital
+            </label>
+            <select
+              id="filter-hospital"
+              className="form-control"
+              value={hospitalFilter}
+              onChange={(e) => {
+                setHospitalFilter(e.target.value);
+                if (e.target.value !== 'ALL') {
+                  selectHospital(e.target.value);
+                }
+              }}
+            >
+              <option value="ALL">All Hospitals</option>
+              {Object.values(hospitalsMap).map((h) => (
+                <option key={h.hospital_id} value={h.hospital_id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div style={{ flex: '1 1 200px' }}>
             <label className="form-label" htmlFor="search-requests" style={{ fontSize: '0.8125rem' }}>
               Search ID or Blood Group
@@ -164,80 +193,77 @@ export default function BloodRequestsPage() {
 
         {!loading && !error && filteredRequests.length === 0 && (
           <EmptyState
-            title="No Matching Requests"
+            title="No Blood Requests Found"
             message={
               requests.length === 0
-                ? "No blood requests found in your scope."
-                : "No requests match the selected filters."
-            }
-            action={
-              requests.length === 0 ? (
-                <Link to="/blood-requests/new" className="btn btn-primary">
-                  Create First Request
-                </Link>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setStatusFilter('ALL');
-                    setUrgencyFilter('ALL');
-                    setSearchTerm('');
-                  }}
-                >
-                  Clear Filters
-                </Button>
-              )
+                ? "No blood requests have been logged yet. Click '+ New Request' to create one."
+                : 'No blood requests match your selected filters.'
             }
           />
         )}
 
         {!loading && !error && filteredRequests.length > 0 && (
           <div className="table-responsive">
-            <table className="table" aria-label="Blood requests list">
+            <table className="table" aria-label="Emergency blood requests">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>Request ID</th>
                   <th>Hospital</th>
                   <th>Blood Group</th>
                   <th>Units</th>
                   <th>Urgency</th>
                   <th>Status</th>
                   <th>Created At</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map((req) => (
-                  <tr key={req.request_id}>
-                    <td>
-                      <strong>#{req.request_id}</strong>
-                    </td>
-                    <td><strong>{hospitalsMap[req.hospital_id]?.name || `Hospital #${req.hospital_id}`}</strong></td>
-                    <td>
-                      <BloodGroupBadge group={req.blood_group} />
-                    </td>
-                    <td>
-                      <strong>{req.units_required}</strong> units
-                    </td>
-                    <td>
-                      <UrgencyBadge urgency={req.urgency} />
-                    </td>
-                    <td>
-                      <StatusBadge status={req.status} />
-                    </td>
-                    <td className="text-secondary" style={{ fontSize: '0.8125rem' }}>
-                      {req.created_at ? new Date(req.created_at).toLocaleString() : '—'}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <Link
-                        to={`/blood-requests/${req.request_id}`}
-                        className="btn btn-primary btn-sm"
-                      >
-                        Coordinate &rarr;
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {filteredRequests.map((req) => {
+                  const hosp = hospitalsMap[req.hospital_id];
+                  const hospName = hosp ? hosp.name : `Hospital #${req.hospital_id}`;
+                  const createdDate = req.created_at
+                    ? new Date(req.created_at).toLocaleString()
+                    : '-';
+
+                  return (
+                    <tr key={req.request_id}>
+                      <td>
+                        <strong>#{req.request_id}</strong>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{hospName}</div>
+                        {hosp && (
+                          <div className="text-secondary" style={{ fontSize: '0.75rem' }}>
+                            {hosp.address}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <BloodGroupBadge bloodGroup={req.blood_group} />
+                      </td>
+                      <td>
+                        <strong>{req.units_required}</strong> units
+                      </td>
+                      <td>
+                        <UrgencyBadge urgency={req.urgency} />
+                      </td>
+                      <td>
+                        <StatusBadge status={req.status} />
+                      </td>
+                      <td style={{ fontSize: '0.8125rem' }}>
+                        {createdDate}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <Link
+                          to={`/blood-requests/${req.request_id}`}
+                          className="btn btn-outline btn-sm"
+                        >
+                          View Details &rarr;
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { processNlRequest } from '../../api/bloodRequests';
+import { useHospital } from '../../context/HospitalContext';
 import Card from '../common/Card';
 
 export default function ChatBloodRequest() {
   const navigate = useNavigate();
+  const { hospitals, selectedHospitalId, selectHospital, currentHospital } = useHospital();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -20,13 +22,19 @@ export default function ChatBloodRequest() {
       return;
     }
 
+    // Automatically append active hospital name context if user didn't mention it
+    let fullPrompt = text;
+    if (currentHospital && !text.toLowerCase().includes(currentHospital.name.toLowerCase().slice(0, 10))) {
+      fullPrompt = `[Hospital: ${currentHospital.name}] ${text}`;
+    }
+
     setError(null);
     setMessages((current) => [...current, { role: 'user', content: text }]);
     setInput('');
     setSubmitting(true);
 
     try {
-      const response = await processNlRequest(text);
+      const response = await processNlRequest(fullPrompt);
 
       if (!response || response.success === false) {
         throw new Error(
@@ -72,13 +80,54 @@ export default function ChatBloodRequest() {
         &larr; Back to Blood Requests
       </Link>
 
-      <div style={{ margin: '0.75rem 0 1.5rem' }}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>
-          Request Blood
-        </h1>
-        <p className="text-secondary" style={{ marginTop: '0.35rem', fontSize: '0.9375rem' }}>
-          Tell us what blood you need and we'll help find available sources.
-        </p>
+      <div style={{ margin: '0.75rem 0 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0, color: 'var(--color-text-main)' }}>
+            Request Blood
+          </h1>
+          <p className="text-secondary" style={{ marginTop: '0.35rem', fontSize: '0.9375rem' }}>
+            Tell us what blood you need and we'll help find available sources.
+          </p>
+        </div>
+
+        {/* Active Hospital Selector Pill */}
+        {hospitals.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              padding: '0.4rem 0.85rem',
+              borderRadius: '8px',
+            }}
+          >
+            <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+              Hospital:
+            </span>
+            <select
+              value={selectedHospitalId}
+              onChange={(e) => selectHospital(e.target.value)}
+              style={{
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                padding: '0.2rem 0.4rem',
+                borderRadius: '4px',
+                border: '1px solid var(--color-border)',
+                backgroundColor: 'transparent',
+                color: 'var(--color-text-primary)',
+                cursor: 'pointer',
+              }}
+            >
+              {hospitals.map((h) => (
+                <option key={h.hospital_id} value={h.hospital_id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -104,7 +153,9 @@ export default function ChatBloodRequest() {
               }}
             >
               <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🩸</div>
-              <h2 style={{ fontSize: '1.1rem', margin: 0 }}>How can we help?</h2>
+              <h2 style={{ fontSize: '1.1rem', margin: 0 }}>
+                {currentHospital ? `Lodge request for ${currentHospital.name}` : 'How can we help?'}
+              </h2>
               <p className="text-secondary" style={{ margin: '0.5rem 0 0', lineHeight: 1.6 }}>
                 Describe the blood group, number of units, urgency, and any other useful details.
               </p>
@@ -172,7 +223,7 @@ export default function ChatBloodRequest() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Tell us naturally what you need — for example, “We need 2 units of O+ blood urgently for a patient undergoing surgery.”"
+              placeholder="Tell us naturally what you need — for example, “We need 2 units of O+ blood urgently for emergency surgery.”"
               disabled={submitting}
               aria-describedby="blood-request-chat-help"
             />
