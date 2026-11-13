@@ -52,9 +52,9 @@ async def _exercise_mcp_boundary(monkeypatch, mcp_url):
 
     discovered = await discover_remote_tools()
     schemas = {tool["name"]: tool["inputSchema"] for tool in discovered}
-    assert set(schemas) == {
+    assert {
         "validate_blood_request", "find_blood_sources", "calculate_distance", "dispatch_notifications"
-    }
+    } <= set(schemas)
     assert {"hospital_id", "blood_group", "units_required", "urgency"} <= set(schemas["validate_blood_request"]["properties"])
     assert {"origin_latitude", "destination_latitude"} <= set(schemas["calculate_distance"]["properties"])
 

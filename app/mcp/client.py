@@ -18,7 +18,7 @@ from app.observability.tracing import (
 from app.security.service_auth import service_auth_headers
 
 tracer = trace.get_tracer("app.mcp.client")
-_KNOWN_TOOLS = {"validate_blood_request", "find_blood_sources", "calculate_distance", "dispatch_notifications"}
+_KNOWN_TOOLS = {"validate_blood_request", "find_blood_sources", "calculate_distance", "dispatch_notifications", "list_blood_banks", "get_blood_bank_details", "search_blood_banks", "find_nearby_blood_banks", "get_blood_bank_inventory", "search_blood_inventory", "get_available_blood_groups", "get_inventory_statistics", "list_hospitals", "get_hospital_details", "create_blood_request", "get_blood_request", "update_blood_request", "update_blood_inventory", "search_donors", "get_donor_details", "find_nearby_donors", "get_available_donors", "get_donors_by_blood_group", "get_donor_statistics", "get_donation_history", "register_donor", "update_donor", "update_donor_availability", "record_donation", "record_donor_notification", "send_blood_bank_notification", "list_blood_bank_notifications", "get_blood_bank_notification", "respond_to_blood_bank_notification", "send_donor_notification", "list_donor_notifications", "get_donor_notification", "respond_to_donor_notification"}
 
 
 def _safe_tool_name(name: str) -> str:

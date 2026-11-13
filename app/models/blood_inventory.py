@@ -13,6 +13,7 @@ class BloodInventory(Base):
     inventory_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     bank_id = Column(Integer, ForeignKey("blood_banks.bank_id", ondelete="CASCADE"), nullable=False, index=True)
     blood_group = Column(String(5), nullable=False, index=True)
+    component_type = Column(String(32), nullable=False, default="packed_red_blood_cells")
     units_available = Column(Integer, nullable=False, default=0)
     expiry_date = Column(Date, nullable=True)
 

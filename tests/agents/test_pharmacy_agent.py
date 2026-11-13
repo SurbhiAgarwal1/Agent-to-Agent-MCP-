@@ -1,5 +1,7 @@
 import pytest
-from app.database.session import Base, SessionLocal, engine
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.database.session import Base, ensure_schema
 from app.database.seed import seed_database
 from app.agents.pharmacy_agent import PharmacyAgent
 from app.agents.a2a.bus import MessageBus
@@ -7,12 +9,17 @@ from app.agents.a2a.message import A2AMessage, A2AMessageType
 
 
 @pytest.fixture(scope="module")
-def db_session():
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+def db_session(tmp_path_factory):
+    test_engine = create_engine(f"sqlite:///{tmp_path_factory.mktemp('pharmacy') / 'test.db'}")
+    import app.models  # noqa: F401
+    Base.metadata.create_all(bind=test_engine)
+    ensure_schema(test_engine)
+    test_session = sessionmaker(bind=test_engine)
+    db = test_session()
     seed_database(db)
     yield db
     db.close()
+    test_engine.dispose()
 
 
 def test_pharmacy_agent_check_stock_a2a(db_session):

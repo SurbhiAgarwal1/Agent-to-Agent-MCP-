@@ -159,13 +159,18 @@ class MatchingAgent:
         }
 
         # 1. Extract request attributes
-        request_id, recipient_group = self._extract_request_info(request_data)
+        request_id, recipient_group, requested_component = self._extract_request_info(request_data)
 
         if not recipient_group:
             return {"request_id": request_id, "matches": [], "excluded": excluded}
 
         # 2. Determine ordered compatible donor groups (exact match is always index 0)
-        compatible_groups = get_compatible_donor_groups(recipient_group)
+        if requested_component and requested_component not in {"whole_blood", "packed_red_blood_cells"}:
+            raise ValueError("component_type must be whole_blood or packed_red_blood_cells")
+        # Whole-blood candidates are kept exact-group only; PRBC uses the repository's
+        # validated RBC matrix. Both remain candidates for qualified clinical review.
+        compatible_groups = ([recipient_group] if requested_component == "whole_blood"
+                             else get_compatible_donor_groups(recipient_group))
         if not compatible_groups:
             # Unknown or unsupported blood group -> no matches possible
             return {"request_id": request_id, "matches": [], "excluded": excluded}
@@ -192,6 +197,8 @@ class MatchingAgent:
                 continue
 
             bg = inv_data["blood_group"]
+            if requested_component and inv_data.get("component_type") != requested_component:
+                continue
             units = inv_data["units_available"]
 
             # Must be medically compatible and have units available > 0
@@ -212,19 +219,26 @@ class MatchingAgent:
                         if units <= 0:
                             continue
                 # Merge several batches of the same group at one bank into a single source
-                existing = bank_index.get((inv_data["bank_id"], bg))
+                key = (inv_data["bank_id"], bg, inv_data.get("component_type") or requested_component)
+                existing = bank_index.get(key)
                 if existing is not None:
                     existing["units_available"] += units
+                    existing["available_units"] += inv_data["available_units"]
+                    existing["reserved_units"] += inv_data["reserved_units"]
                     continue
                 entry = {
                     "source_type": MatchSourceType.BLOOD_BANK.value,
                     "source_id": inv_data["bank_id"],
                     "blood_group": bg,
                     "units_available": units,
+                    "available_units": inv_data["available_units"],
+                    "reserved_units": inv_data["reserved_units"],
+                    "component_type": inv_data.get("component_type") or requested_component,
+                    "match_status": "candidate_requires_clinical_confirmation",
                     "_priority_rank": group_priority[bg],
                     "_source_rank": 0,  # Prioritize institutional blood banks before individual donors
                 }
-                bank_index[(inv_data["bank_id"], bg)] = entry
+                bank_index[key] = entry
                 matches.append(entry)
 
         # 5. Filter and process voluntary donor candidates
@@ -252,6 +266,10 @@ class MatchingAgent:
                     "source_id": donor_data["donor_id"],
                     "blood_group": bg,
                     "units_available": 1,  # A single voluntary donor contributes 1 unit
+                    "available_units": 1,
+                    "reserved_units": 0,
+                    "component_type": requested_component,
+                    "match_status": "donor_candidate_requires_clinical_confirmation",
                     "_priority_rank": group_priority[bg],
                     "_source_rank": 1,
                 })
@@ -269,8 +287,13 @@ class MatchingAgent:
             {
                 "source_type": m["source_type"],
                 "source_id": m["source_id"],
+                "blood_bank_id": m["source_id"] if m["source_type"] == MatchSourceType.BLOOD_BANK.value else None,
                 "blood_group": m["blood_group"],
                 "units_available": m["units_available"],
+                "available_units": m["available_units"],
+                "reserved_units": m["reserved_units"],
+                "component_type": m.get("component_type"),
+                "match_status": m["match_status"],
             }
             for m in matches
         ]
@@ -312,19 +335,21 @@ class MatchingAgent:
 
     def _extract_request_info(
         self, request_data: Union[Dict[str, Any], BloodRequest]
-    ) -> tuple[Optional[int], Optional[str]]:
-        """Extract request_id and normalized blood_group from dict or BloodRequest."""
+    ) -> tuple[Optional[int], Optional[str], Optional[str]]:
+        """Extract request ID, normalized group and optional component from request input."""
         if isinstance(request_data, dict):
             req_id = request_data.get("request_id")
             raw_bg = request_data.get("blood_group")
+            component = request_data.get("component_type")
         elif isinstance(request_data, BloodRequest):
             req_id = request_data.request_id
             raw_bg = request_data.blood_group
+            component = getattr(request_data, "component_type", None)
         else:
-            return None, None
+            return None, None, None
 
         clean_bg = raw_bg.strip().upper() if isinstance(raw_bg, str) else None
-        return req_id, clean_bg
+        return req_id, clean_bg, component
 
     def _get_inventories(
         self, inventories: Optional[List[Union[Dict[str, Any], BloodInventory]]]
@@ -359,11 +384,17 @@ class MatchingAgent:
             bg = item.get("blood_group")
             units = item.get("units_available", 0)
             expiry = item.get("expiry_date")
+            component = item.get("component_type")
+            available_units = item.get("available_units", units)
+            reserved_units = item.get("reserved_units", 0)
         elif isinstance(item, BloodInventory):
             bank_id = item.bank_id
             bg = item.blood_group
             units = item.units_available
             expiry = item.expiry_date
+            component = getattr(item, "component_type", None)
+            available_units = getattr(item, "available_units", units)
+            reserved_units = getattr(item, "reserved_units", 0)
         else:
             return None
 
@@ -374,6 +405,9 @@ class MatchingAgent:
             "bank_id": bank_id,
             "blood_group": bg.strip().upper(),
             "units_available": int(units) if units is not None else 0,
+            "available_units": int(available_units) if available_units is not None else 0,
+            "reserved_units": int(reserved_units) if reserved_units is not None else 0,
+            "component_type": component,
             "expiry_date": expiry,
         }
 

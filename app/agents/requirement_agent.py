@@ -165,6 +165,10 @@ class RequirementAgent:
                     f"Unsupported urgency level '{raw_urgency}'. Supported levels are: {sorted(list(self.VALID_URGENCIES))}."
                 )
 
+        component_type = request_data.get("component_type", "packed_red_blood_cells")
+        if component_type not in {"whole_blood", "packed_red_blood_cells"}:
+            errors.append("component_type must be whole_blood or packed_red_blood_cells")
+
         # If any validation errors occurred, return invalid response with errors
         if errors:
             return {
@@ -173,11 +177,17 @@ class RequirementAgent:
                 "errors": errors,
             }
 
+        component_type = request_data.get("component_type", "packed_red_blood_cells")
+        if component_type not in {"whole_blood", "packed_red_blood_cells"}:
+            errors.append("component_type must be whole_blood or packed_red_blood_cells")
+            return {"request_id": request_id, "valid": False, "errors": errors}
+
         # Return clean, validated, and normalized requirement
         return {
             "request_id": request_id,
             "blood_group": normalized_blood_group,
             "units_required": units_required,
             "urgency": normalized_urgency,
+            "component_type": component_type,
             "valid": True,
         }

@@ -13,9 +13,9 @@ def test_every_agent_exposes_agent_card_and_jsonrpc_routes():
 
 def test_official_mcp_server_registers_domain_tools():
     tools = mcp._tool_manager.list_tools()
-    assert {tool.name for tool in tools} == {
+    assert {
         "validate_blood_request",
         "find_blood_sources",
         "calculate_distance",
         "dispatch_notifications",
-    }
+    } <= {tool.name for tool in tools}

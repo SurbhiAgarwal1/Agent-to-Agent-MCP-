@@ -25,6 +25,10 @@ RUN groupadd --system app \
 COPY --from=builder /install /usr/local
 
 COPY app /app/app
+COPY data_apis /app/data_apis
+COPY blood_bank_api /app/blood_bank_api
+COPY donor_api /app/donor_api
+COPY scripts /app/scripts
 COPY .env.example /app/.env.example
 
 # SQLite lives here (mounted as a volume in docker-compose.yml)
@@ -32,7 +36,7 @@ RUN mkdir -p /app/data && chown -R app:app /app/data
 
 USER app
 
-EXPOSE 8000
+EXPOSE 8000 8001 8105 8106
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1

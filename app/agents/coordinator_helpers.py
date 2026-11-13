@@ -313,17 +313,12 @@ def format_orchestration_view(
 
 def should_call_coordinator_over_a2a(db: Optional[Session]) -> bool:
     """Return True when the Gateway should invoke the Coordinator Agent over A2A HTTP."""
-    import os
-
+    from app.agents.a2a.mode import get_execution_mode
+    if get_execution_mode() == "distributed":
+        return True
     if is_in_memory_db(db):
         return False
-    if os.getenv("COORDINATOR_IN_PROCESS", "").strip().lower() in {"1", "true", "yes"}:
-        return False
-    return bool(
-        os.getenv("COORDINATORAGENT_BASE_URL", "").strip()
-        or os.getenv("COORDINATORAGENT_A2A_URL", "").strip()
-        or os.getenv("COORDINATOR_USE_A2A", "").strip().lower() in {"1", "true", "yes"}
-    )
+    return False
 
 
 def invoke_coordinator_from_gateway(
@@ -333,12 +328,12 @@ def invoke_coordinator_from_gateway(
     persist: bool = True,
     mode: str = "coordinate",
 ) -> Dict[str, Any]:
-    """Invoke Coordinator over A2A when configured, with seamless local CoordinatorAgent fallback."""
-    import os
+    """Invoke Coordinator using the configured transport; distributed failures never downgrade locally."""
+    from app.agents.a2a.mode import get_execution_mode
     from app.agents.coordinator_agent import CoordinatorAgent
 
     if should_call_coordinator_over_a2a(db):
-        from app.agents.a2a.client import call_remote_agent
+        from app.agents.a2a.client import call_remote_agent_by_skill
 
         payload: Dict[str, Any] = {
             "request_id": request_id,
@@ -348,21 +343,18 @@ def invoke_coordinator_from_gateway(
         }
         try:
             result = run_coro_sync(
-                call_remote_agent(
-                    "COORDINATORAGENT",
+                call_remote_agent_by_skill(
+                    "coordinate",
                     payload,
-                    skill="coordinate",
                     operation="COORDINATE_REQUEST",
                 )
             )
             db.expire_all()
             return result
-        except Exception:
-            if os.getenv("COORDINATOR_REQUIRE_A2A", "").strip().lower() in {"1", "true", "yes"}:
-                raise
+        except Exception as exc:
+            raise RuntimeError(f"Distributed Coordinator A2A call failed: {type(exc).__name__}: {exc}") from exc
 
-    use_network = os.getenv("COORDINATOR_USE_NETWORK", "").strip().lower() in {"1", "true", "yes"}
-    coordinator = CoordinatorAgent(db=db, network=use_network)
+    coordinator = CoordinatorAgent(db=db, network=False)
     if mode == "orchestrate":
         return coordinator.orchestrate(request_id=request_id, persist=persist)
     return coordinator.coordinate(request_input=request_id, persist=persist)

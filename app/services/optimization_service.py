@@ -156,6 +156,20 @@ class OptimizationService:
             }
             if cand.get("blood_group"):
                 plan_entry["blood_group"] = cand["blood_group"]
+            if cand.get("component_type"):
+                plan_entry["component_type"] = cand["component_type"]
+            if "available_units" in cand:
+                plan_entry["available_units"] = cand["available_units"]
+            if "reserved_units" in cand:
+                plan_entry["reserved_units"] = cand["reserved_units"]
+            if cand.get("address"):
+                plan_entry["address"] = cand["address"]
+            if cand.get("latitude") is not None:
+                plan_entry["latitude"] = cand["latitude"]
+            if cand.get("longitude") is not None:
+                plan_entry["longitude"] = cand["longitude"]
+            if cand.get("match_status"):
+                plan_entry["match_status"] = cand["match_status"]
             if "name" in cand:
                 plan_entry["name"] = cand["name"]
             if "estimated_time" in cand:

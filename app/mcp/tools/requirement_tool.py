@@ -22,6 +22,7 @@ INPUT_SCHEMA: Dict[str, Any] = {
             "type": "string",
             "description": "Requested ABO/Rh blood group (e.g. 'A+', 'O-', 'ab+').",
         },
+        "component_type": {"type": "string", "enum": ["whole_blood", "packed_red_blood_cells"]},
         "units_required": {
             "type": "integer",
             "description": "Number of blood units required (must be > 0).",

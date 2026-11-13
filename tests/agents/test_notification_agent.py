@@ -86,7 +86,8 @@ def test_console_provider_output_format():
     assert rec["channel"] == "CONSOLE"
     assert rec["recipient_type"] == "BLOOD_BANK"
     assert rec["recipient_id"] == 12
-    assert rec["status"] == "DELIVERED"
+    assert rec["status"] == "SIMULATED"
+    assert rec["delivery_status"] == "simulated"
     assert len(provider.get_history()) == 1
 
 
@@ -97,10 +98,12 @@ def test_provider_fallback_when_unconfigured(monkeypatch):
 
     email_p = EmailNotificationProvider()
     email_rec = email_p.send_notification("HOSPITAL", 1, "Email Alert", "Test email")
-    assert email_rec["fallback"] is True
+    assert email_rec["fallback_reason"] == "recipient email address missing"
     assert email_rec["channel"] == "CONSOLE"
+    assert email_rec["delivery_status"] == "simulated"
 
     sms_p = SMSNotificationProvider()
     sms_rec = sms_p.send_notification("DONOR", 4, "SMS Alert", "Test sms")
-    assert sms_rec["fallback"] is True
+    assert sms_rec["fallback_reason"] == "recipient phone number missing"
     assert sms_rec["channel"] == "CONSOLE"
+    assert sms_rec["delivery_status"] == "simulated"

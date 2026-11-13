@@ -35,7 +35,8 @@ class ConsoleNotificationProvider(BaseNotificationProvider):
             "title": title,
             "message": message,
             "metadata": metadata or {},
-            "status": "DELIVERED",
+            "status": "SIMULATED",
+            "delivery_status": "simulated",
         }
         self.sent_notifications.append(record)
         logger.info("Notification dispatch attempted")

@@ -13,8 +13,6 @@ from a2a.types import Message, Part, SendMessageRequest
 from opentelemetry import trace
 
 from app.agents.a2a.discovery import (
-    AGENT_BY_SKILL,
-    agent_env_prefix,
     card_matches_skill,
     default_skill_for_agent,
     discover_agent_by_skill,
@@ -38,6 +36,7 @@ _ALLOWED_OPERATIONS = {
     "MATCHING_FIND_SOURCES_REQUEST",
     "LOCATION_CALCULATE_DISTANCES_REQUEST",
     "NOTIFICATION_DISPATCH_REQUEST",
+    "EMERGENCY_PRIORITY_EVALUATE_REQUEST",
     "COORDINATE_REQUEST",
 }
 
@@ -46,16 +45,16 @@ async def call_remote_agent_by_skill(
     skill: str,
     payload: Dict[str, Any],
     *,
-    preferred_agent: Optional[str] = None,
     operation: str = "message",
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Discover an A2A agent by advertised AgentCard skill and send a JSON task."""
-    agent_hint = preferred_agent or AGENT_BY_SKILL.get(skill, skill)
+    """Discover an A2A agent by advertised capability and send a JSON task."""
     return await call_remote_agent(
-        agent_hint,
+        skill,
         payload,
         skill=skill,
         operation=operation,
+        correlation_id=correlation_id,
     )
 
 
@@ -66,10 +65,11 @@ async def call_remote_agent(
     port: Optional[int] = None,
     skill: Optional[str] = None,
     operation: str = "message",
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Discover an agent card and send a JSON task using the official A2A client."""
     source = os.getenv("OTEL_SERVICE_NAME", os.getenv("A2A_AGENT", "coordinator")).lower()
-    target = normalize_agent_key(agent) or agent.removesuffix("Agent").lower()
+    target = normalize_agent_key(agent) or str(agent)
     if operation not in _ALLOWED_OPERATIONS:
         operation = "other"
     attrs = {"source_agent": source, "target_agent": target, "operation": operation}
@@ -88,7 +88,7 @@ async def call_remote_agent(
         set_status_on_exception=False,
     ) as span:
         try:
-            result = await _call_remote_agent(agent, payload, port=port, skill=skill)
+            result = await _call_remote_agent(agent, payload, port=port, skill=skill, operation=operation, correlation_id=correlation_id)
             status = "success"
             span.set_attribute("a2a.status", "success")
             A2A_REQUESTS.add(1, {**attrs, "status": "success"})
@@ -104,35 +104,40 @@ async def call_remote_agent(
 
 
 async def _call_remote_agent(
-    agent: str,
+    agent: Optional[str],
     payload: Dict[str, Any],
     *,
     port: Optional[int] = None,
     skill: Optional[str] = None,
+    operation: str = "message",
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    prefix = agent_env_prefix(agent)
-    explicit_agent_url = os.getenv(f"{prefix}_BASE_URL", "").strip() or os.getenv(f"{prefix}_A2A_URL", "").strip()
-    required_skill = skill or default_skill_for_agent(agent)
+    required_skill = skill or (default_skill_for_agent(agent) if agent else None)
+    if not required_skill:
+        raise ValueError("A capability is required for A2A agent selection")
     timeout = float(os.getenv("A2A_TIMEOUT_SECONDS", "20"))
     attempts = max(1, int(os.getenv("A2A_MAX_RETRIES", "2")) + 1)
     headers = service_auth_headers()
     last_error: Optional[Exception] = None
+    task_id = str(uuid.uuid4())
+    context_id = correlation_id or str(uuid.uuid4())
+    message_id = str(uuid.uuid4())
+    request_metadata = {"taskId": task_id, "correlationId": context_id, "capability": required_skill, "operation": operation}
+    selected_agent_id = required_skill
 
     for attempt in range(attempts):
         try:
             async with httpx.AsyncClient(timeout=timeout, headers=headers) as http_client:
-                if explicit_agent_url or port is not None or not required_skill:
-                    base = resolve_agent_base_url(agent, port=port)
-                else:
-                    base, card = await discover_agent_by_skill(
-                        required_skill,
-                        preferred_agent=agent,
-                        port=port,
-                        http_client=http_client,
-                        timeout=timeout,
-                    )
-                    if not card_matches_skill(card, required_skill):
-                        raise RuntimeError(f"Agent at {base} does not advertise skill '{required_skill}'")
+                base, card = await discover_agent_by_skill(
+                    required_skill,
+                    preferred_agent=agent,
+                    port=port,
+                    http_client=http_client,
+                    timeout=timeout,
+                )
+                selected_agent_id = str(card.get("agentId") or required_skill)
+                if not card_matches_skill(card, required_skill):
+                    raise RuntimeError(f"Selected agent does not advertise capability '{required_skill}'")
 
                 factory = ClientFactory(
                     ClientConfig(
@@ -144,9 +149,12 @@ async def _call_remote_agent(
                 client = await factory.create_from_url(base.rstrip("/"))
                 request = SendMessageRequest(
                     message=Message(
-                        message_id=str(uuid.uuid4()),
+                        message_id=message_id,
+                        task_id=task_id,
+                        context_id=context_id,
                         role="ROLE_USER",
                         parts=[Part(text=json.dumps(payload, default=str))],
+                        metadata=request_metadata,
                     )
                 )
                 async for response in client.send_message(request):
@@ -162,11 +170,26 @@ async def _call_remote_agent(
                                     decoded = json.loads(part.text)
                                     if isinstance(decoded, dict):
                                         if "error" in decoded:
-                                            raise RuntimeError(decoded["error"])
+                                            error = decoded["error"]
+                                            raise RuntimeError(error if isinstance(error, str) else str(error))
+                                        response_metadata = dict(response.message.metadata) if response.message.metadata else {}
+                                        decoded["_a2a"] = {
+                                            "task_id": response_metadata.get("taskId") or response.message.task_id or task_id,
+                                            "context_id": response.message.context_id or context_id,
+                                            "correlation_id": response_metadata.get("correlationId") or context_id,
+                                            "agent_id": response_metadata.get("agentId") or selected_agent_id,
+                                            "capability": required_skill,
+                                            "operation": operation,
+                                        }
                                         return decoded
             raise RuntimeError(f"A2A agent '{agent}' returned no message")
         except Exception as exc:
             last_error = exc
             if attempt + 1 < attempts:
                 await asyncio.sleep(min(0.2 * (attempt + 1), timeout / 2))
-    raise RuntimeError(f"A2A call to '{agent}' failed after {attempts} attempt(s): {last_error}") from last_error
+    label = agent or required_skill
+    if agent and agent != required_skill:
+        message = f"A2A call to '{agent}' failed after {attempts} attempt(s): {last_error}"
+    else:
+        message = f"A2A call for capability '{required_skill}' failed after {attempts} attempt(s): {last_error}"
+    raise RuntimeError(message) from last_error

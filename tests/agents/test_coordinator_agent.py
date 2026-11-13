@@ -277,10 +277,12 @@ def test_coordinator_part9_location_error(db_session):
             "source_type": "BLOOD_BANK",
             "source_id": 9999,
             "blood_group": "A+",
+            "component_type": "packed_red_blood_cells",
             "units_available": 2,
             "latitude": None,
             "longitude": None,
         }],
+        "donors": [],
     }
     result = coordinator.coordinate(request_input=no_loc_payload, persist=False)
 

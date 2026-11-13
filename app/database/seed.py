@@ -47,7 +47,7 @@ SYNTHETIC_HOSPITALS = [
 ]
 
 # -----------------------------------------------------------------------------
-# 2. Synthetic Blood Banks (3 facilities)
+# 2. Synthetic Blood Banks (4 facilities)
 # -----------------------------------------------------------------------------
 SYNTHETIC_BLOOD_BANKS = [
     {
@@ -68,6 +68,12 @@ SYNTHETIC_BLOOD_BANKS = [
         "longitude": 77.2300,
         "address": "77 Pulse Circle, East Sector, Metro City",
     },
+    {
+        "name": "Harborview Community Blood Centre",
+        "latitude": 28.6070,
+        "longitude": 77.1980,
+        "address": "14 Civic Link, West Sector, Metro City",
+    },
 ]
 
 # -----------------------------------------------------------------------------
@@ -79,8 +85,7 @@ SYNTHETIC_DONORS = [
         "blood_group": BloodGroup.O_NEG.value,
         "latitude": 28.6150,
         "longitude": 77.2110,
-        "contact_number": "+91-98765-01001",
-        "is_available": True,
+        "available": True,
         "last_donation_date": date.today() - timedelta(days=120),
     },
     {
@@ -88,11 +93,21 @@ SYNTHETIC_DONORS = [
         "blood_group": BloodGroup.A_POS.value,
         "latitude": 28.6300,
         "longitude": 77.2200,
-        "contact_number": "+91-98765-01002",
-        "is_available": True,
+        "available": True,
         "last_donation_date": date.today() - timedelta(days=95),
     },
 ]
+SYNTHETIC_DONORS.extend(
+    {
+        "name": f"Synthetic Demo Donor {number:02d}",
+        "blood_group": list(BloodGroup)[(number - 1) % len(BloodGroup)].value,
+        "latitude": 28.6000 + (number % 15) * 0.002,
+        "longitude": 77.2000 + (number % 15) * 0.002,
+        "available": number % 5 != 0,
+        "last_donation_date": date.today() - timedelta(days=70 + number * 9),
+    }
+    for number in range(3, 16)
+)
 
 # -----------------------------------------------------------------------------
 # 4. Synthetic Local Partner Pharmacies (Sanvivo / Apollo 24x7 network)
@@ -202,7 +217,7 @@ SYNTHETIC_MEDICINES = [
 
 def seed_database(db: Session) -> Dict[str, Any]:
     """Populate database with synthetic development records."""
-    summary: Dict[str, int] = {}
+    summary: Dict[str, Any] = {}
 
     # Seed hospitals
     if db.query(Hospital).count() == 0:
@@ -217,6 +232,19 @@ def seed_database(db: Session) -> Dict[str, Any]:
         db.add_all(blood_banks)
         db.commit()
         summary["blood_banks_created"] = len(blood_banks)
+
+    if db.query(BloodInventory).count() == 0:
+        today = date.today()
+        inventories = [
+            BloodInventory(bank_id=bank.bank_id, blood_group=group.value,
+                           units_available=max(0, 4 + ((bank.bank_id + idx) % 11)),
+                           expiry_date=today + timedelta(days=21 + idx))
+            for bank in db.query(BloodBank).all()
+            for idx, group in enumerate(BloodGroup)
+        ]
+        db.add_all(inventories)
+        db.commit()
+        summary["inventories_created"] = len(inventories)
 
     # Seed donors
     if db.query(Donor).count() == 0:
@@ -274,6 +302,14 @@ def seed_database(db: Session) -> Dict[str, Any]:
         db.commit()
         summary["inventory_items_created"] = len(inv_items)
 
+    counts = {
+        "hospitals": db.query(Hospital).count(),
+        "blood_banks": db.query(BloodBank).count(),
+        "donors": db.query(Donor).count(),
+        "inventories": db.query(BloodInventory).count(),
+    }
+    summary.update(counts)
+    summary["status"] = "success" if any(key.endswith("_created") for key in summary) else "already_seeded"
     return summary
 
 

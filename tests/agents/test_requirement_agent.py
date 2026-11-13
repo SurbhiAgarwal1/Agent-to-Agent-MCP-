@@ -53,6 +53,7 @@ def test_requirement_agent_valid_request(db_session):
         "blood_group": "O+",
         "units_required": 4,
         "urgency": "CRITICAL",
+        "component_type": "packed_red_blood_cells",
         "valid": True,
     }
 

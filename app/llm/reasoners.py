@@ -103,6 +103,7 @@ class MockReasoner(LLMReasoner):
             if blood_match else None
         )
         units_req = int(units_match.group(1)) if units_match else None
+        component_type = "whole_blood" if re.search(r"\bwhole\s+blood\b", text, re.IGNORECASE) else "packed_red_blood_cells"
 
         req_type = "blood"
         if medicines_list and blood_group:
@@ -114,6 +115,7 @@ class MockReasoner(LLMReasoner):
             "request_type": req_type,
             "blood_group": blood_group,
             "units_required": units_req,
+            "component_type": component_type,
             "medicines": medicines_list,
             "location": location,
             "urgency": urgency,
@@ -204,12 +206,15 @@ class GeminiReasoner(LLMReasoner):
                     ),
                 )
                 raw_text = response.text or ""
-                if not raw_text.strip():
-                    raise GeminiProviderError("Gemini returned no structured plan.")
-                try:
-                    plan = json.loads(raw_text)
-                except json.JSONDecodeError as exc:
-                    raise GeminiProviderError("Gemini returned malformed JSON.") from exc
+                if raw_text.strip():
+                    try:
+                        plan = json.loads(raw_text)
+                    except json.JSONDecodeError as exc:
+                        raise GeminiProviderError("Gemini returned malformed JSON.") from exc
+                else:
+                    plan = getattr(response, "parsed", None)
+                    if not isinstance(plan, dict):
+                        raise GeminiProviderError("Gemini returned no structured plan.")
 
                 usage_meta = getattr(response, "usage_metadata", None)
                 usage = {
@@ -228,9 +233,12 @@ class GeminiReasoner(LLMReasoner):
                 raise
             except Exception as exc:
                 last_error = exc
-                if attempt < self.max_retries:
+                error_status = getattr(exc, "status_code", getattr(exc, "code", None))
+                if attempt < self.max_retries and error_status not in {400, 401, 403, 404, 422}:
                     self._sleep(0.5 * (2**attempt))
                     continue
+                if error_status in {400, 401, 403, 404, 422}:
+                    break
 
         category = "timeout" if "timeout" in str(last_error).lower() else "call failed"
         status = getattr(last_error, "status_code", getattr(last_error, "code", "network"))

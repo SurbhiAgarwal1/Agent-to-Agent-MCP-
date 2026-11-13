@@ -107,18 +107,21 @@ def test_exact_blood_group_match():
     assert len(result["matches"]) == 2
 
     # Both must be B+ and have correct source info
-    assert result["matches"][0] == {
+    assert all(result["matches"][0].get(key) == value for key, value in {
         "source_type": MatchSourceType.BLOOD_BANK.value,
         "source_id": 1,
+        "blood_bank_id": 1,
         "blood_group": "B+",
         "units_available": 5,
-    }
-    assert result["matches"][1] == {
+        "available_units": 5,
+        "reserved_units": 0,
+    }.items())
+    assert all(result["matches"][1].get(key) == value for key, value in {
         "source_type": MatchSourceType.DONOR.value,
         "source_id": 10,
         "blood_group": "B+",
         "units_available": 1,
-    }
+    }.items())
 
 
 def test_incompatible_blood_group():
@@ -222,33 +225,35 @@ def test_multiple_possible_matches_with_prioritization():
     assert len(matches) == 4
 
     # 1. Exact Blood Bank: Bank 2 (O+)
-    assert matches[0] == {
+    assert all(matches[0].get(key) == value for key, value in {
         "source_type": MatchSourceType.BLOOD_BANK.value,
         "source_id": 2,
+        "blood_bank_id": 2,
         "blood_group": "O+",
         "units_available": 6,
-    }
+    }.items())
     # 2. Exact Donor: Donor 8 (O+)
-    assert matches[1] == {
+    assert all(matches[1].get(key) == value for key, value in {
         "source_type": MatchSourceType.DONOR.value,
         "source_id": 8,
         "blood_group": "O+",
         "units_available": 1,
-    }
+    }.items())
     # 3. Compatible Blood Bank: Bank 1 (O-)
-    assert matches[2] == {
+    assert all(matches[2].get(key) == value for key, value in {
         "source_type": MatchSourceType.BLOOD_BANK.value,
         "source_id": 1,
+        "blood_bank_id": 1,
         "blood_group": "O-",
         "units_available": 3,
-    }
+    }.items())
     # 4. Compatible Donor: Donor 9 (O-)
-    assert matches[3] == {
+    assert all(matches[3].get(key) == value for key, value in {
         "source_type": MatchSourceType.DONOR.value,
         "source_id": 9,
         "blood_group": "O-",
         "units_available": 1,
-    }
+    }.items())
 
 
 def test_no_matches():

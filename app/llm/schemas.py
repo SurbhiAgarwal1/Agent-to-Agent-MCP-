@@ -41,11 +41,12 @@ class BloodRequestPlan(BaseModel):
 
     request_type: str = Field(default="blood", description="'blood', 'medicine', or 'combined'")
     blood_group: str | None = None
+    component_type: str = Field(default="packed_red_blood_cells", pattern="^(whole_blood|packed_red_blood_cells)$")
     units_required: int | None = Field(default=None, ge=1)
     medicines: List[MedicineRequestItem] = Field(default_factory=list)
     location: str | None = None
     urgency: UrgencyLevel = UrgencyLevel.MEDIUM
-    required_capabilities: list[Capability] = Field(default_factory=lambda: [Capability(c) for c in BASE_CAPABILITIES])
+    required_capabilities: list[Capability]
 
     @field_validator("blood_group")
     @classmethod
@@ -82,8 +83,7 @@ class BloodRequestPlan(BaseModel):
         base_set = set(BASE_CAPABILITIES)
         missing_base = base_set - selected
         if missing_base:
-            # Auto-populate missing base capabilities for backwards compatibility
-            self.required_capabilities.extend([Capability(m) for m in missing_base])
+            raise ValueError(f"required_capabilities is missing required entries: {', '.join(sorted(missing_base))}")
 
         # If medicines are included, ensure pharmacy capabilities are tagged
         if self.medicines:

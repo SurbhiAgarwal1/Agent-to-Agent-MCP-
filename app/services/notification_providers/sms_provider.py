@@ -21,21 +21,21 @@ class SMSNotificationProvider(BaseNotificationProvider):
         message: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Dispatch SMS, falling back to console if API key not configured."""
-        if not self.sms_api_key:
-            record = self.fallback.send_notification(
-                recipient_type, recipient_id, title, message, metadata
-            )
-            record["fallback"] = True
-            record["fallback_reason"] = "SMS_API_KEY not configured"
+        """Send only when a destination number is supplied; otherwise simulate honestly."""
+        from app.services.notification_providers.delivery import deliver_notification
+        metadata = metadata or {}
+        recipient = metadata.get("phone")
+        if not recipient:
+            record = self.fallback.send_notification(recipient_type, recipient_id, title, message, metadata)
+            record["fallback_reason"] = "recipient phone number missing"
             return record
-
+        outcome = deliver_notification("sms", "", recipient, title, message)
         return {
             "channel": "SMS",
             "recipient_type": recipient_type.upper(),
             "recipient_id": recipient_id,
-            "title": title,
-            "message": message,
-            "metadata": metadata or {},
-            "status": "SENT",
+            "delivery_status": outcome.status,
+            "status": outcome.status.upper(),
+            "sent_at": outcome.sent_at.isoformat() if outcome.sent_at else None,
+            "error": outcome.error,
         }

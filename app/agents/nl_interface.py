@@ -189,6 +189,8 @@ class NLInterfaceAgent:
             hospital_id=hospital.hospital_id,
             created_by_user_id=current_user_id,
             blood_group=plan.blood_group,
+            component_type=plan.component_type,
+
             units_required=plan.units_required,
             urgency=plan.urgency.value,
             status=RequestStatus.PENDING.value,

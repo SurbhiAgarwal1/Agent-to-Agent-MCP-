@@ -3,7 +3,7 @@
 from mcp.server.fastmcp import FastMCP
 import os
 from functools import wraps
-from typing import Any
+from typing import Any, Literal
 from opentelemetry import trace
 
 from app.database.session import SessionLocal
@@ -11,6 +11,7 @@ from app.mcp.tools.requirement_tool import handle_validate_blood_request
 from app.mcp.tools.matching_tool import handle_find_blood_sources
 from app.mcp.tools.location_tool import handle_calculate_distance
 from app.mcp.tools.notification_tool import handle_dispatch_notifications
+from app.mcp.data_api_tools import register_data_api_tools
 from app.observability.tracing import configure_telemetry, instrument_asgi
 
 configure_telemetry("blood-donation-mcp")
@@ -50,21 +51,22 @@ def _database_tool(handler, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
-def validate_blood_request(hospital_id: int, blood_group: str, units_required: int, urgency: str, request_id: int | None = None) -> dict:
+def validate_blood_request(hospital_id: int, blood_group: str, units_required: int, urgency: str, request_id: int | None = None, component_type: str = "packed_red_blood_cells") -> dict:
     """Validate and normalize a blood request."""
-    return _domain_operation("validate_blood_request", lambda: _database_tool(handle_validate_blood_request, {"hospital_id": hospital_id, "blood_group": blood_group, "units_required": units_required, "urgency": urgency, "request_id": request_id}))()
+    return _domain_operation("validate_blood_request", lambda: _database_tool(handle_validate_blood_request, {"hospital_id": hospital_id, "blood_group": blood_group, "units_required": units_required, "urgency": urgency, "request_id": request_id, "component_type": component_type}))()
 
 
 @mcp.tool()
 def find_blood_sources(
     blood_group: str,
+    component_type: Literal["whole_blood", "packed_red_blood_cells"] | None = None,
     request_id: int | None = None,
     inventories: list[dict[str, Any]] | None = None,
     donors: list[dict[str, Any]] | None = None,
 ) -> dict:
     """Find compatible, currently eligible blood sources."""
     return _domain_operation("find_blood_sources", lambda: _database_tool(handle_find_blood_sources, {
-        "blood_group": blood_group, "request_id": request_id,
+        "blood_group": blood_group, "component_type": component_type, "request_id": request_id,
         "inventories": inventories, "donors": donors,
     }))()
 
@@ -98,6 +100,11 @@ def create_mcp_app():
     """Build the authenticated, telemetry-instrumented MCP Streamable HTTP ASGI application."""
     secured = ServiceAuthenticationMiddleware(mcp.streamable_http_app(), protected_prefix="/mcp")
     return instrument_asgi(secured, "mcp-server")
+
+
+# Data capabilities are HTTP-backed tools on this same official Streamable HTTP server.
+# The standalone data APIs remain independently deployable and own their databases.
+register_data_api_tools(mcp)
 
 
 if __name__ == "__main__":

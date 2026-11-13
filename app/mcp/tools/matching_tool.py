@@ -7,7 +7,8 @@ from app.agents.matching_agent import MatchingAgent
 TOOL_NAME = "find_blood_sources"
 TOOL_DESCRIPTION = (
     "Discovers compatible blood bank inventories and registered voluntary donors "
-    "for a blood request using medical RBC ABO/Rh compatibility rules."
+    "for Whole Blood (exact blood-group candidates) or PRBC (validated RBC ABO/Rh candidate rules). "
+    "Component selection is exact; all results require qualified clinical confirmation."
 )
 
 INPUT_SCHEMA: Dict[str, Any] = {
@@ -16,6 +17,11 @@ INPUT_SCHEMA: Dict[str, Any] = {
         "blood_group": {
             "type": "string",
             "description": "Recipient ABO/Rh blood group (e.g. 'O+', 'A-', 'B+').",
+        },
+        "component_type": {
+            "type": "string",
+            "enum": ["whole_blood", "packed_red_blood_cells"],
+            "description": "Required component; inventory matches must use the same component.",
         },
         "request_id": {
             "type": "integer",
@@ -53,8 +59,13 @@ OUTPUT_SCHEMA: Dict[str, Any] = {
                 "properties": {
                     "source_type": {"type": "string"},
                     "source_id": {"type": "integer"},
+                    "blood_bank_id": {"type": ["integer", "null"]},
                     "blood_group": {"type": "string"},
                     "units_available": {"type": "integer"},
+                    "available_units": {"type": "integer"},
+                    "reserved_units": {"type": "integer"},
+                    "component_type": {"type": ["string", "null"], "enum": ["whole_blood", "packed_red_blood_cells", None]},
+                    "match_status": {"type": "string"},
                 },
                 "required": ["source_type", "source_id", "blood_group", "units_available"],
             },
@@ -83,6 +94,7 @@ def handle_find_blood_sources(
     req_payload = {
         "request_id": arguments.get("request_id", 1),
         "blood_group": blood_group,
+        "component_type": arguments.get("component_type"),
     }
 
     return agent.find_matches(

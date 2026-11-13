@@ -498,6 +498,10 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## 🧪 Test Suite & Quality Assurance
 
+### Synthetic Data APIs and MCP
+
+The repository now includes independent blood bank and donor data APIs, deterministic large-dataset seed commands, and HTTP-backed tools on the existing official MCP Streamable HTTP server. See [docs/synthetic-data-apis.md](docs/synthetic-data-apis.md) for local run instructions, endpoint references, MCP tool catalog, environment variables, and examples.
+
 The automated suite covers unit, integration, protocol, and access-control behavior using synthetic data and in-memory SQLite. Passing tests show the code behaves as designed; they do not make the system clinically validated. Run the test suite locally to see the current pass/fail count.
 
 ### Run Full Test Suite

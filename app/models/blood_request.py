@@ -14,6 +14,7 @@ class BloodRequest(Base):
     request_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     hospital_id = Column(Integer, ForeignKey("hospitals.hospital_id", ondelete="CASCADE"), nullable=False, index=True)
     blood_group = Column(String(5), nullable=False, index=True)
+    component_type = Column(String(32), nullable=False, default="packed_red_blood_cells")
     units_required = Column(Integer, nullable=False)
     urgency = Column(String(20), nullable=False, default=UrgencyLevel.MEDIUM.value)
     status = Column(String(20), nullable=False, default=RequestStatus.PENDING.value)

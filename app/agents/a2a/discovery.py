@@ -1,186 +1,164 @@
-"""Dynamic Agent Card discovery and skill-based endpoint resolution for A2A agents."""
+"""Bootstrap-based Agent Card discovery with official A2A card validation."""
+from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
+# Kept only for legacy URL helpers. Dynamic routing does not select agents from this map.
 DEFAULT_AGENT_URLS: Dict[str, str] = {
-    "coordinator": "http://127.0.0.1:8100",
-    "requirement": "http://127.0.0.1:8101",
-    "matching": "http://127.0.0.1:8102",
-    "location": "http://127.0.0.1:8103",
-    "notification": "http://127.0.0.1:8104",
-    "communication": "http://127.0.0.1:8105",
-    "calling": "http://127.0.0.1:8106",
-    "pharmacy": "http://127.0.0.1:8107",
+    "coordinator": "http://127.0.0.1:8100", "requirement": "http://127.0.0.1:8101",
+    "matching": "http://127.0.0.1:8102", "location": "http://127.0.0.1:8103",
+    "notification": "http://127.0.0.1:8104", "communication": "http://127.0.0.1:8105",
+    "calling": "http://127.0.0.1:8106", "pharmacy": "http://127.0.0.1:8107",
+    "emergency-priority": "http://127.0.0.1:8108",
 }
 
 SKILL_BY_AGENT: Dict[str, str] = {
-    "coordinator": "coordinate",
-    "requirement": "validate-request",
-    "matching": "find-sources",
-    "location": "calculate-distance",
-    "notification": "notify",
-    "communication": "communicate",
-    "calling": "call",
-    "pharmacy": "fulfill-pharmacy-order",
+    "coordinator": "coordinate-blood-request", "requirement": "validate-blood-request",
+    "matching": "find-compatible-blood-sources", "location": "calculate-source-distance",
+    "notification": "dispatch-fulfillment-notifications", "communication": "coordinate-donor-outreach",
+    "calling": "place-emergency-calls", "pharmacy": "fulfill-pharmacy-order",
+    "emergency-priority": "evaluate-emergency-priority",
 }
-
-AGENT_BY_SKILL: Dict[str, str] = {v: k for k, v in SKILL_BY_AGENT.items()}
+AGENT_BY_SKILL: Dict[str, str] = {value: key for key, value in SKILL_BY_AGENT.items()}
 
 
 def normalize_agent_key(agent: str) -> str:
-    """Normalize an agent identifier (e.g. 'RequirementAgent' or 'REQUIREMENTAGENT') to its short key."""
     cleaned = (agent or "").strip().lower()
-    if cleaned.endswith("agent"):
-        cleaned = cleaned[:-5]
-    return cleaned
+    return cleaned[:-5] if cleaned.endswith("agent") else cleaned
 
 
 def agent_env_prefix(agent: str) -> str:
-    """Return the uppercase environment variable prefix (e.g. 'REQUIREMENTAGENT')."""
-    short = normalize_agent_key(agent)
-    return f"{short.upper()}AGENT"
+    return f"{normalize_agent_key(agent).replace('-', '_').upper()}AGENT"
 
 
 def default_skill_for_agent(agent: str) -> Optional[str]:
-    """Return the primary advertised skill tag for a domain agent."""
     return SKILL_BY_AGENT.get(normalize_agent_key(agent))
 
 
 def resolve_agent_base_url(agent: str, *, port: Optional[int] = None) -> str:
-    """Resolve the base URL for an agent from environment configuration or defaults without hardcoded caller ports."""
     prefix = agent_env_prefix(agent)
-    short = normalize_agent_key(agent)
-
-    explicit_base = os.getenv(f"{prefix}_BASE_URL", "").strip()
-    if explicit_base:
-        return explicit_base.rstrip("/")
-
-    explicit_a2a = os.getenv(f"{prefix}_A2A_URL", "").strip()
-    if explicit_a2a:
-        base = explicit_a2a.rstrip("/")
-        if base.endswith("/a2a"):
-            base = base[:-4]
-        return base.rstrip("/")
-
+    explicit = os.getenv(f"{prefix}_BASE_URL", "").strip() or os.getenv(f"{prefix}_A2A_URL", "").strip()
+    if explicit:
+        base = explicit.rstrip("/")
+        return base[:-4].rstrip("/") if base.endswith("/a2a") else base
     if port is not None:
         return f"http://127.0.0.1:{port}"
-
-    return DEFAULT_AGENT_URLS.get(short, "http://127.0.0.1:8100")
+    return DEFAULT_AGENT_URLS.get(normalize_agent_key(agent), "")
 
 
 def configured_candidate_urls(preferred_agent: Optional[str] = None, *, port: Optional[int] = None) -> List[str]:
-    """Return ordered candidate base URLs for Agent Card discovery."""
+    """Read only bootstrap endpoints from configuration; Agent Cards choose capabilities."""
     candidates: List[str] = []
 
-    def _add(url: Optional[str]) -> None:
-        if not url:
+    def add(value: Optional[str]) -> None:
+        if not value:
             return
-        cleaned = url.strip().rstrip("/")
+        cleaned = value.strip().rstrip("/")
         if cleaned.endswith("/a2a"):
             cleaned = cleaned[:-4].rstrip("/")
         if cleaned and cleaned not in candidates:
             candidates.append(cleaned)
 
     if preferred_agent:
-        _add(resolve_agent_base_url(preferred_agent, port=port))
-
-    extra_urls = os.getenv("A2A_AGENT_URLS", "").strip()
-    if extra_urls:
-        for item in extra_urls.split(","):
-            _add(item)
-
-    for short in DEFAULT_AGENT_URLS:
-        prefix = f"{short.upper()}AGENT"
-        _add(os.getenv(f"{prefix}_BASE_URL"))
-        _add(os.getenv(f"{prefix}_A2A_URL"))
-
-    for short, default_url in DEFAULT_AGENT_URLS.items():
-        _add(default_url)
-
+        add(resolve_agent_base_url(preferred_agent, port=port))
+    for value in os.getenv("A2A_AGENT_URLS", "").split(","):
+        add(value)
+    raw = os.getenv("A2A_AGENT_REGISTRY", "").strip()
+    if raw:
+        try:
+            registry = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("A2A_AGENT_REGISTRY must be valid JSON") from exc
+        entries = registry.values() if isinstance(registry, dict) else registry
+        if not isinstance(entries, (list, tuple, type({}.values()))):
+            raise ValueError("A2A_AGENT_REGISTRY must be an object or array")
+        for entry in entries:
+            if isinstance(entry, str):
+                add(entry)
+            elif isinstance(entry, dict):
+                add(entry.get("base_url") or entry.get("url") or entry.get("endpoint"))
+            else:
+                raise ValueError("A2A_AGENT_REGISTRY entries must be URLs or objects containing base_url")
+    # Per-agent URLs are bootstrap hints only; the requested skill is always verified against the card.
+    for key, value in os.environ.items():
+        if key.endswith("AGENT_BASE_URL") or key.endswith("AGENT_A2A_URL"):
+            add(value)
     return candidates
 
 
 def card_matches_skill(card: Dict[str, Any], skill: str) -> bool:
-    """Return True if the Agent Card advertises the requested skill ID, name, or tag."""
     target = (skill or "").strip().lower()
     if not target:
-        return True
-    skills = card.get("skills") or []
-    for item in skills:
+        return False
+    for item in card.get("skills") or []:
         if not isinstance(item, dict):
             continue
-        if str(item.get("id", "")).lower() == target:
-            return True
-        if str(item.get("name", "")).lower() == target:
-            return True
-        tags = [str(tag).lower() for tag in (item.get("tags") or [])]
-        if target in tags:
+        values = [item.get("id"), item.get("name"), *(item.get("tags") or [])]
+        if target in {str(value).strip().lower() for value in values if value}:
             return True
     return False
 
 
-async def fetch_agent_card(
-    base_url: str,
-    *,
-    http_client: Optional[httpx.AsyncClient] = None,
-    timeout: float = 5.0,
-) -> Dict[str, Any]:
-    """Fetch and parse /.well-known/agent-card.json from an agent base URL."""
+async def _get(client: Optional[httpx.AsyncClient], url: str, timeout: float):
+    if client is not None:
+        return await client.get(url)
+    async with httpx.AsyncClient(timeout=timeout) as owned:
+        return await owned.get(url)
+
+
+async def fetch_agent_card(base_url: str, *, http_client: Optional[httpx.AsyncClient] = None, timeout: float = 5.0) -> Dict[str, Any]:
     card_url = f"{base_url.rstrip('/')}/.well-known/agent-card.json"
-    if http_client is not None:
-        response = await http_client.get(card_url)
-        response.raise_for_status()
-        card = response.json()
-    else:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(card_url)
-            response.raise_for_status()
-            card = response.json()
-    if not isinstance(card, dict) or not card.get("name"):
-        raise ValueError(f"Invalid Agent Card at {card_url}")
+    response = await _get(http_client, card_url, timeout)
+    response.raise_for_status()
+    card = response.json()
+    required = ("name", "description", "version", "supportedInterfaces", "capabilities", "defaultInputModes", "defaultOutputModes", "skills", "agentId", "metadata")
+    missing = [key for key in required if not isinstance(card, dict) or not card.get(key)]
+    if missing:
+        raise ValueError(f"Invalid Agent Card at {card_url}; missing {', '.join(missing)}")
+    try:
+        from google.protobuf.json_format import ParseDict
+        from a2a.types import AgentCard
+        ParseDict(card, AgentCard(), ignore_unknown_fields=True)
+    except Exception as exc:
+        raise ValueError(f"Invalid official A2A Agent Card at {card_url}: {type(exc).__name__}") from exc
+    interfaces = card.get("supportedInterfaces", [])
+    if not any(isinstance(item, dict) and item.get("url") and item.get("protocolBinding") == "JSONRPC" for item in interfaces):
+        raise ValueError(f"Agent Card at {card_url} has no JSON-RPC interface")
+    metadata = card.get("metadata") or {}
+    if metadata.get("availability") not in {"available", "healthy", "ok"}:
+        raise ValueError(f"Agent Card at {card_url} reports unavailable")
+    health_url = metadata.get("healthUrl") or f"{base_url.rstrip('/')}/health"
+    health = await _get(http_client, health_url, timeout)
+    health.raise_for_status()
+    health_data = health.json()
+    if health_data.get("status") not in {"healthy", "available", "ok"}:
+        raise ValueError(f"Agent health check failed at {health_url}")
     return card
 
 
-async def discover_agent_by_skill(
-    skill: str,
-    *,
-    preferred_agent: Optional[str] = None,
-    port: Optional[int] = None,
-    candidate_urls: Optional[List[str]] = None,
-    http_client: Optional[httpx.AsyncClient] = None,
-    timeout: float = 5.0,
-) -> Tuple[str, Dict[str, Any]]:
-    """Discover an agent endpoint by reading Agent Cards and matching advertised skills.
+async def discover_agents(*, candidate_urls: Optional[List[str]] = None, http_client: Optional[httpx.AsyncClient] = None, timeout: float = 5.0) -> list[Tuple[str, Dict[str, Any]]]:
+    results = []
+    for url in candidate_urls if candidate_urls is not None else configured_candidate_urls():
+        try:
+            results.append((url.rstrip("/"), await fetch_agent_card(url, http_client=http_client, timeout=timeout)))
+        except Exception:
+            continue
+    return results
 
-    Args:
-        skill: Required skill tag or ID (e.g. 'validate-request', 'find-sources', 'calculate-distance', 'notify').
-        preferred_agent: Optional agent name hint to check first.
-        port: Optional legacy port hint.
-        candidate_urls: Optional explicit list of base URLs to probe.
-        http_client: Optional shared httpx.AsyncClient.
-        timeout: Discovery request timeout in seconds.
 
-    Returns:
-        Tuple of (resolved_base_url, agent_card_dict).
-    """
-    if preferred_agent is None and skill in AGENT_BY_SKILL:
-        preferred_agent = AGENT_BY_SKILL[skill]
-
+async def discover_agent_by_skill(skill: str, *, preferred_agent: Optional[str] = None, port: Optional[int] = None, candidate_urls: Optional[List[str]] = None, http_client: Optional[httpx.AsyncClient] = None, timeout: float = 5.0) -> Tuple[str, Dict[str, Any]]:
     urls = candidate_urls if candidate_urls is not None else configured_candidate_urls(preferred_agent, port=port)
     last_error: Optional[Exception] = None
-
-    for base_url in urls:
-        try:
-            card = await fetch_agent_card(base_url, http_client=http_client, timeout=timeout)
-            if card_matches_skill(card, skill):
-                return base_url.rstrip("/"), card
-        except Exception as exc:
-            last_error = exc
-            continue
-
-    raise RuntimeError(
-        f"No A2A agent advertising skill '{skill}' could be discovered from {urls}: {last_error}"
-    ) from last_error
+    for base_url, card in await discover_agents(candidate_urls=urls, http_client=http_client, timeout=timeout):
+        if card_matches_skill(card, skill):
+            interface = next(item for item in card["supportedInterfaces"] if item.get("protocolBinding") == "JSONRPC")
+            parsed = urlparse(interface["url"])
+            return f"{parsed.scheme}://{parsed.netloc}", card
+    if not urls:
+        raise RuntimeError("No A2A bootstrap endpoints are configured; set A2A_AGENT_URLS or A2A_AGENT_REGISTRY")
+    raise RuntimeError(f"No available A2A agent advertises capability '{skill}' from configured bootstrap endpoints: {urls}") from last_error

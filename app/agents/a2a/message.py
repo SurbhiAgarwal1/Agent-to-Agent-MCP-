@@ -6,6 +6,12 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 
+class _MessageTypeValue(str):
+    @property
+    def value(self):
+        return str(self)
+
+
 class A2AMessageType:
     """Standard message types exchanged across agents."""
     # Requirement Agent messages
@@ -24,6 +30,10 @@ class A2AMessageType:
     NOTIFICATION_DISPATCH_REQUEST = "NOTIFICATION_DISPATCH_REQUEST"
     NOTIFICATION_DISPATCHED_EVENT = "NOTIFICATION_DISPATCHED_EVENT"
 
+    # Emergency priority evaluation
+    EMERGENCY_PRIORITY_EVALUATE_REQUEST = "EMERGENCY_PRIORITY_EVALUATE_REQUEST"
+    EMERGENCY_PRIORITY_EVALUATED_EVENT = "EMERGENCY_PRIORITY_EVALUATED_EVENT"
+
     # Communication Agent messages
     COMMUNICATION_OUTREACH_REQUEST = "COMMUNICATION_OUTREACH_REQUEST"
     COMMUNICATION_OUTREACH_DISPATCHED = "COMMUNICATION_OUTREACH_DISPATCHED"
@@ -41,6 +51,10 @@ class A2AMessageType:
 
     # Error message
     A2A_ERROR = "A2A_ERROR"
+    # Generic aliases retained for agents that use the common request/response envelope.
+    REQUEST = _MessageTypeValue("REQUEST")
+    RESPONSE = _MessageTypeValue("RESPONSE")
+    ERROR = _MessageTypeValue("A2A_ERROR")
 
 
 class A2AMessage(BaseModel):
@@ -61,7 +75,9 @@ class A2AMessage(BaseModel):
     message_type: str
     payload: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    correlation_id: str
+    correlation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    capability: Optional[str] = None
 
     @classmethod
     def create(
@@ -72,6 +88,8 @@ class A2AMessage(BaseModel):
         payload: Dict[str, Any],
         correlation_id: str,
         message_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        capability: Optional[str] = None,
     ) -> "A2AMessage":
         """Convenience factory method to create an A2A message."""
         return cls(
@@ -82,23 +100,27 @@ class A2AMessage(BaseModel):
             payload=payload,
             timestamp=datetime.now(timezone.utc).isoformat(),
             correlation_id=correlation_id,
+            task_id=task_id or message_id or str(uuid.uuid4()),
+            capability=capability,
         )
 
     def create_response(
         self,
         sender_agent: str,
-        message_type: str,
-        payload: Dict[str, Any],
+        message_type: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
     ) -> "A2AMessage":
         """Create a response message responding to this message, preserving correlation_id."""
         return A2AMessage(
             message_id=str(uuid.uuid4()),
             sender_agent=sender_agent,
             receiver_agent=self.sender_agent,
-            message_type=message_type,
-            payload=payload,
+            message_type=message_type or A2AMessageType.RESPONSE,
+            payload=payload or {},
             timestamp=datetime.now(timezone.utc).isoformat(),
             correlation_id=self.correlation_id,
+            task_id=self.task_id,
+            capability=self.capability,
         )
 
     def create_error(
@@ -121,4 +143,6 @@ class A2AMessage(BaseModel):
             },
             timestamp=datetime.now(timezone.utc).isoformat(),
             correlation_id=self.correlation_id,
+            task_id=self.task_id,
+            capability=self.capability,
         )

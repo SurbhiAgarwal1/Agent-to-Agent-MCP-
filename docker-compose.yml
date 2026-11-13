@@ -8,7 +8,8 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
       SERVICE_TO_SERVICE_TOKEN: ${SERVICE_TO_SERVICE_TOKEN:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
-      A2A_AGENT_URLS: http://coordinator-agent:8100,http://requirement-agent:8101,http://matching-agent:8102,http://location-agent:8103,http://notification-agent:8104
+      A2A_AGENT_URLS: http://coordinator-agent:8100,http://requirement-agent:8101,http://matching-agent:8102,http://location-agent:8103,http://notification-agent:8104,http://communication-agent:8105,http://calling-agent:8106,http://pharmacy-agent:8107,http://emergency-priority-agent:8108
+      A2A_EXECUTION_MODE: ${A2A_EXECUTION_MODE:-distributed}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
       OBSERVABILITY_METRICS_PORT: ${OBSERVABILITY_METRICS_PORT:-9464}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
@@ -18,13 +19,96 @@ services:
       OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-none}
       OTEL_SERVICE_NAME: mcp-server
       MCP_PORT: 8001
+      BLOOD_BANK_API_URL: http://blood-bank-data-api:8105
+      DONOR_API_URL: http://donor-data-api:8106
+      DATA_APIS_ENABLED: ${DATA_APIS_ENABLED:-true}
+      NOTIFICATION_CHANNEL: ${NOTIFICATION_CHANNEL:-console}
+      NOTIFICATION_PUBLIC_BASE_URL: ${NOTIFICATION_PUBLIC_BASE_URL:-http://localhost:8105}
+      NOTIFICATION_PUBLIC_DONOR_URL: ${NOTIFICATION_PUBLIC_DONOR_URL:-http://localhost:8106}
+      NOTIFICATION_WEBHOOK_TOKEN: ${NOTIFICATION_WEBHOOK_TOKEN:-}
+      NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS: ${NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS:-86400}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
     volumes: [blood_data:/app/data]
-    expose: ["8001", "9464"]
+    ports: ["127.0.0.1:8001:8001"]
+    expose: ["9464"]
     depends_on:
       backend: {condition: service_healthy}
+      blood-bank-data-api: {condition: service_healthy}
+      donor-data-api: {condition: service_healthy}
       jaeger: {condition: service_started}
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s = socket.create_connection(('127.0.0.1', 8001), 2); s.close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  blood-bank-data-api:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    restart: unless-stopped
+    command: ["uvicorn", "blood_bank_api.main:app", "--host", "0.0.0.0", "--port", "8105"]
+    environment:
+      BLOOD_BANK_DATABASE_URL: sqlite:////app/data/blood_bank_data.db
+      BLOOD_BANK_API_PORT: 8105
+      NOTIFICATION_CHANNEL: ${NOTIFICATION_CHANNEL:-console}
+      NOTIFICATION_PUBLIC_BASE_URL: ${NOTIFICATION_PUBLIC_BASE_URL:-http://localhost:8105}
+      NOTIFICATION_WEBHOOK_TOKEN: ${NOTIFICATION_WEBHOOK_TOKEN:-}
+      NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS: ${NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS:-86400}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+    volumes: [blood_bank_data:/app/data]
+    ports: ["127.0.0.1:8105:8105"]
+    expose: ["8105"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8105/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  donor-data-api:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    restart: unless-stopped
+    command: ["uvicorn", "donor_api.main:app", "--host", "0.0.0.0", "--port", "8106"]
+    environment:
+      DONOR_DATABASE_URL: sqlite:////app/data/donor_data.db
+      DONOR_API_PORT: 8106
+      NOTIFICATION_CHANNEL: ${NOTIFICATION_CHANNEL:-console}
+      NOTIFICATION_PUBLIC_DONOR_URL: ${NOTIFICATION_PUBLIC_DONOR_URL:-http://localhost:8106}
+      NOTIFICATION_WEBHOOK_TOKEN: ${NOTIFICATION_WEBHOOK_TOKEN:-}
+      NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS: ${NOTIFICATION_RESPONSE_TOKEN_TTL_SECONDS:-86400}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_STARTTLS: ${SMTP_USE_STARTTLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+    volumes: [donor_data:/app/data]
+    ports: ["127.0.0.1:8106:8106"]
+    expose: ["8106"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8106/health')"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -139,6 +223,82 @@ services:
       timeout: 5s
       retries: 3
 
+  communication-agent:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8105", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: communication
+      A2A_AGENT_ID: communication
+      COMMUNICATIONAGENT_A2A_URL: http://communication-agent:8105/a2a
+      OTEL_SERVICE_NAME: communication-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8105", "9464"]
+    depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8105/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  calling-agent:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8106", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: calling
+      A2A_AGENT_ID: calling
+      CALLINGAGENT_A2A_URL: http://calling-agent:8106/a2a
+      OTEL_SERVICE_NAME: calling-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8106", "9464"]
+    depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8106/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  pharmacy-agent:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8107", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: pharmacy
+      A2A_AGENT_ID: pharmacy
+      PHARMACYAGENT_A2A_URL: http://pharmacy-agent:8107/a2a
+      OTEL_SERVICE_NAME: pharmacy-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8107", "9464"]
+    depends_on: [mcp, backend, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8107/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  emergency-priority-agent:
+    image: blood-donation-app:latest
+    build: {context: ., dockerfile: Dockerfile}
+    command: ["uvicorn", "app.agents.a2a.service:create_service", "--factory", "--host", "0.0.0.0", "--port", "8108", "--no-access-log"]
+    environment:
+      <<: *app_environment
+      A2A_AGENT: emergency-priority
+      A2A_AGENT_ID: emergency-priority
+      EMERGENCY_PRIORITYAGENT_A2A_URL: http://emergency-priority-agent:8108/a2a
+      OTEL_SERVICE_NAME: emergency-priority-agent
+    volumes: [blood_data:/app/data]
+    expose: ["8108", "9464"]
+    depends_on: [mcp, jaeger]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8108/.well-known/agent-card.json')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   backend:
     image: blood-donation-app:latest
     build: {context: ., dockerfile: Dockerfile}
@@ -163,6 +323,7 @@ services:
       MATCHINGAGENT_BASE_URL: http://matching-agent:8102
       LOCATIONAGENT_BASE_URL: http://location-agent:8103
       NOTIFICATIONAGENT_BASE_URL: http://notification-agent:8104
+      A2A_EXECUTION_MODE: ${A2A_EXECUTION_MODE:-distributed}
       OTEL_SERVICE_NAME: gateway
     volumes: [blood_data:/app/data]
     expose: ["9464"]
@@ -195,7 +356,7 @@ services:
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    depends_on: [backend, coordinator-agent, requirement-agent, matching-agent, location-agent, notification-agent, mcp]
+    depends_on: [backend, coordinator-agent, requirement-agent, matching-agent, location-agent, notification-agent, communication-agent, calling-agent, pharmacy-agent, emergency-priority-agent, mcp]
 
   grafana:
     image: grafana/grafana:12.2.0
@@ -216,5 +377,7 @@ services:
 
 volumes:
   blood_data:
+  blood_bank_data:
+  donor_data:
   prometheus_data:
   grafana_data:

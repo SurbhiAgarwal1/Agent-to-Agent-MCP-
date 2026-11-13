@@ -21,23 +21,21 @@ class EmailNotificationProvider(BaseNotificationProvider):
         message: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Dispatch email, falling back to console if SMTP not configured."""
-        if not self.smtp_host:
-            # Fallback to console provider
-            record = self.fallback.send_notification(
-                recipient_type, recipient_id, title, message, metadata
-            )
-            record["fallback"] = True
-            record["fallback_reason"] = "SMTP_HOST not configured"
+        """Send only when a destination address is supplied; otherwise simulate honestly."""
+        from app.services.notification_providers.delivery import deliver_notification
+        metadata = metadata or {}
+        recipient = metadata.get("email")
+        if not recipient:
+            record = self.fallback.send_notification(recipient_type, recipient_id, title, message, metadata)
+            record["fallback_reason"] = "recipient email address missing"
             return record
-
-        # Stub for active SMTP dispatch
+        outcome = deliver_notification("email", recipient, "", title, message)
         return {
             "channel": "EMAIL",
             "recipient_type": recipient_type.upper(),
             "recipient_id": recipient_id,
-            "title": title,
-            "message": message,
-            "metadata": metadata or {},
-            "status": "SENT",
+            "delivery_status": outcome.status,
+            "status": outcome.status.upper(),
+            "sent_at": outcome.sent_at.isoformat() if outcome.sent_at else None,
+            "error": outcome.error,
         }

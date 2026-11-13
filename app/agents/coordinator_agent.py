@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.agents.a2a.bus import MessageBus
-from app.agents.a2a.discovery import default_skill_for_agent
+from app.agents.a2a.registry import build_local_agent_registry
 from app.agents.a2a.message import A2AMessage, A2AMessageType
 from app.agents.coordinator_helpers import (
     calculate_priority_score as _calc_priority_score,
@@ -31,13 +31,6 @@ from app.agents.coordinator_helpers import (
     resolve_hospital_by_location,
     run_coro_sync,
 )
-from app.agents.location_agent import LocationAgent
-from app.agents.matching_agent import MatchingAgent
-from app.agents.notification_agent import NotificationAgent
-from app.agents.communication_agent import CommunicationAgent
-from app.agents.calling_agent import CallingAgent
-from app.agents.pharmacy_agent import PharmacyAgent
-from app.agents.requirement_agent import RequirementAgent
 from app.llm.client import record_usage
 from app.llm.reasoners import (
     LLMReasoner,
@@ -93,29 +86,19 @@ class CoordinatorAgent:
     ):
         """Initialize Coordinator Agent."""
         self.db = db
-        self.network = bool(network and not is_in_memory_db(db))
+        self.network = bool(network)
+        if self.network and db is not None and is_in_memory_db(db):
+            raise ValueError("Distributed A2A mode requires a persistent database session; refusing local fallback")
         self.peer_to_peer = peer_to_peer
         self.reasoner = reasoner or create_reasoner()
         self._network_trace: Dict[str, List[Dict[str, Any]]] = {}
+        self.local_agent_registry = None
         default_hub = None if peer_to_peer else COORDINATOR_NAME
         self.bus = None if self.network else (bus or MessageBus(hub=default_hub))
         if self.bus is not None:
             if self.bus.hub is None and not peer_to_peer:
                 self.bus.hub = COORDINATOR_NAME
-            self.req_agent = RequirementAgent(db=self.db, bus=self.bus)
-            self.match_agent = MatchingAgent(db=self.db, bus=self.bus)
-            self.loc_agent = LocationAgent(bus=self.bus)
-            self.notif_agent = NotificationAgent(bus=self.bus)
-            self.comm_agent = CommunicationAgent(db=self.db, bus=self.bus)
-            self.calling_agent = CallingAgent(db=self.db, bus=self.bus)
-            self.pharmacy_agent = PharmacyAgent(db=self.db)
-            self.bus.register_agent("RequirementAgent", self.req_agent.handle_a2a_message)
-            self.bus.register_agent("MatchingAgent", self.match_agent.handle_a2a_message)
-            self.bus.register_agent("LocationAgent", self.loc_agent.handle_a2a_message)
-            self.bus.register_agent("NotificationAgent", self.notif_agent.handle_a2a_message)
-            self.bus.register_agent("CommunicationAgent", self.comm_agent.handle_a2a_message)
-            self.bus.register_agent("CallingAgent", self.calling_agent.handle_a2a_message)
-            self.bus.register_agent("PharmacyAgent", self.pharmacy_agent.handle_a2a_message)
+            self.local_agent_registry = build_local_agent_registry(self.db, self.bus)
 
     def generate_plan(self, user_request: str) -> tuple[BloodRequestPlan, Dict[str, Any]]:
         """Use the configured provider and validate its untrusted structured output."""
@@ -200,6 +183,7 @@ class CoordinatorAgent:
         persist: bool = False,
         request_id: Optional[int] = None,
         allowed_hospital_ids: Optional[set[int]] = None,
+        correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Plan a natural-language request, then execute only via the Coordinator workflow."""
         return self._run_workflow(
@@ -208,6 +192,7 @@ class CoordinatorAgent:
                 persist=persist,
                 request_id=request_id,
                 allowed_hospital_ids=allowed_hospital_ids,
+                correlation_id=correlation_id,
             )
         )
 
@@ -218,6 +203,7 @@ class CoordinatorAgent:
         persist: bool = False,
         request_id: Optional[int] = None,
         allowed_hospital_ids: Optional[set[int]] = None,
+        correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Async entrypoint for natural-language request planning and coordination."""
         return await asyncio.to_thread(
@@ -226,6 +212,7 @@ class CoordinatorAgent:
             persist=persist,
             request_id=request_id,
             allowed_hospital_ids=allowed_hospital_ids,
+            correlation_id=correlation_id,
         )
 
     def _coordinate_text(
@@ -235,6 +222,7 @@ class CoordinatorAgent:
         persist: bool,
         request_id: Optional[int],
         allowed_hospital_ids: Optional[set[int]] = None,
+        correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         plan, _llm_metadata = self.generate_plan(user_request)
         missing = []
@@ -287,6 +275,7 @@ class CoordinatorAgent:
             new_req = BloodRequest(
                 hospital_id=hospital.hospital_id,
                 blood_group=plan.blood_group,
+                component_type=plan.component_type,
                 units_required=plan.units_required,
                 urgency=plan.urgency.value,
                 status=RequestStatus.PENDING.value,
@@ -306,68 +295,94 @@ class CoordinatorAgent:
             "hospital_latitude": hospital.latitude,
             "hospital_longitude": hospital.longitude,
             "blood_group": plan.blood_group,
+            "component_type": plan.component_type,
             "units_required": plan.units_required,
             "urgency": plan.urgency.value,
         }
-        result = self.coordinate(request_payload, persist=persist)
+        result = self.coordinate(request_payload, persist=persist, correlation_id=correlation_id)
         return {**result, "plan": plan.model_dump(mode="json")}
 
-    def _ask(self, receiver: str, message_type: str, payload: Dict[str, Any], correlation_id: str):
-        """Send a request to an agent over A2A (via Agent Card skill discovery in network mode or MessageBus)."""
+    def _ask_capability(self, capability: str, message_type: str, payload: Dict[str, Any], correlation_id: str):
+        """Discover a handler by advertised capability and execute through the selected transport."""
         if self.network:
             try:
-                from app.agents.a2a.client import call_remote_agent
-
-                skill = default_skill_for_agent(receiver)
+                from app.agents.a2a.client import call_remote_agent_by_skill
                 reply_payload = run_coro_sync(
-                    call_remote_agent(
-                        receiver.upper(),
+                    call_remote_agent_by_skill(
+                        capability,
                         payload,
-                        skill=skill,
                         operation=message_type,
+                        correlation_id=correlation_id,
                     )
                 )
+                remote_metadata = reply_payload.pop("_a2a", {})
+                agent_id = remote_metadata.get("agent_id", capability)
                 self._network_trace.setdefault(correlation_id, []).extend(
                     [
                         {
-                            "message_id": uuid.uuid4().hex,
+                            "message_id": remote_metadata.get("message_id", uuid.uuid4().hex),
+                            "task_id": remote_metadata.get("task_id"),
+                            "agent_id": agent_id,
+                            "capability": capability,
                             "sender": COORDINATOR_NAME,
-                            "receiver": receiver,
+                            "receiver": agent_id,
                             "type": message_type,
                             "correlation_id": correlation_id,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                         {
-                            "message_id": uuid.uuid4().hex,
-                            "sender": receiver,
+                            "message_id": remote_metadata.get("message_id", uuid.uuid4().hex),
+                            "task_id": remote_metadata.get("task_id"),
+                            "agent_id": agent_id,
+                            "capability": capability,
+                            "sender": agent_id,
                             "receiver": COORDINATOR_NAME,
                             "type": message_type + ".response",
-                            "correlation_id": correlation_id,
+                            "correlation_id": remote_metadata.get("correlation_id", correlation_id),
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     ]
                 )
                 if reply_payload.get("success") is False:
-                    raise RuntimeError(reply_payload.get("error", f"{receiver} reported failure"))
+                    raise RuntimeError(reply_payload.get("error", f"Agent '{agent_id}' reported failure"))
                 return reply_payload, None
             except Exception as exc:
                 error = A2AMessage.create(
-                    sender_agent=receiver,
+                    sender_agent=capability,
                     receiver_agent=COORDINATOR_NAME,
                     message_type=A2AMessageType.A2A_ERROR,
                     payload={"error": str(exc)},
                     correlation_id=correlation_id,
                 )
                 return None, error
-        reply = self.bus.send(
-            A2AMessage.create(
+        if self.local_agent_registry is None:
+            error = A2AMessage.create(
+                sender_agent="LocalAgentRegistry", receiver_agent=COORDINATOR_NAME,
+                message_type=A2AMessageType.A2A_ERROR,
+                payload={"error": "Local agent registry is unavailable"}, correlation_id=correlation_id,
+            )
+            return None, error
+        try:
+            selected = self.local_agent_registry.select(capability)
+        except LookupError as exc:
+            error = A2AMessage.create(
+                sender_agent="LocalAgentRegistry", receiver_agent=COORDINATOR_NAME,
+                message_type=A2AMessageType.A2A_ERROR, payload={"error": str(exc)}, correlation_id=correlation_id,
+            )
+            return None, error
+        outbound = A2AMessage.create(
                 sender_agent=COORDINATOR_NAME,
-                receiver_agent=receiver,
+                receiver_agent=selected.agent_id,
                 message_type=message_type,
                 payload=payload,
                 correlation_id=correlation_id,
+                task_id=uuid.uuid4().hex,
+                capability=capability,
             )
+        reply = self.bus.send(
+            outbound
         )
+        self._network_trace.setdefault(correlation_id, [])
         if reply.message_type == A2AMessageType.A2A_ERROR:
             return None, reply
         return reply.payload, None
@@ -379,6 +394,8 @@ class CoordinatorAgent:
         return [
             {
                 "message_id": m.message_id,
+                "task_id": m.task_id,
+                "capability": m.capability,
                 "sender": m.sender_agent,
                 "receiver": m.receiver_agent,
                 "type": m.message_type,
@@ -522,6 +539,7 @@ class CoordinatorAgent:
                 "request_id": blood_request_model.request_id,
                 "hospital_id": blood_request_model.hospital_id,
                 "blood_group": blood_request_model.blood_group,
+                "component_type": blood_request_model.component_type,
                 "units_required": blood_request_model.units_required,
                 "urgency": blood_request_model.urgency,
             }
@@ -531,6 +549,7 @@ class CoordinatorAgent:
                 "request_id": request_input.request_id,
                 "hospital_id": request_input.hospital_id,
                 "blood_group": request_input.blood_group,
+                "component_type": getattr(request_input, "component_type", "packed_red_blood_cells"),
                 "units_required": request_input.units_required,
                 "urgency": request_input.urgency,
             }
@@ -575,8 +594,8 @@ class CoordinatorAgent:
                 )
 
         # Step 2: VALIDATED (RequirementAgent)
-        reply, error_reply = self._ask(
-            "RequirementAgent", A2AMessageType.REQUIREMENT_VALIDATE_REQUEST, raw_payload, corr_id
+        reply, error_reply = self._ask_capability(
+            "validate-blood-request", A2AMessageType.REQUIREMENT_VALIDATE_REQUEST, raw_payload, corr_id
         )
         if error_reply is not None:
             current_state = CoordinatorState.FAILED
@@ -596,6 +615,30 @@ class CoordinatorAgent:
                 correlation_id=corr_id,
             )
         validation_result = reply["requirement"]
+        priority_result, priority_error = self._ask_capability(
+            "evaluate-emergency-priority",
+            A2AMessageType.EMERGENCY_PRIORITY_EVALUATE_REQUEST,
+            {
+                "request_id": req_id,
+                "blood_group": validation_result["blood_group"],
+                "units_required": validation_result["units_required"],
+                "urgency": validation_result["urgency"],
+            },
+            corr_id,
+        )
+        if priority_error is not None:
+            current_state = CoordinatorState.FAILED
+            error_msg = f"Emergency priority evaluation failed: {priority_error.payload.get('error', 'agent unavailable')}"
+            log_transition(current_state, error_msg)
+            return self._failure_response(
+                request_id=req_id, failed_at="PRIORITY", error=error_msg,
+                state_history=state_history, correlation_id=corr_id,
+            )
+        validation_result["urgency"] = priority_result["urgency"]
+        validation_result["priority"] = {
+            key: priority_result[key]
+            for key in ("priority_score", "escalation_recommended", "prioritize_first", "reason")
+        }
         current_state = CoordinatorState.VALIDATED
         log_transition(
             current_state,
@@ -620,6 +663,7 @@ class CoordinatorAgent:
         enable_p2p = (self.network or self.peer_to_peer) and hosp_lat is not None and hosp_lon is not None
         matching_payload: Dict[str, Any] = {
             "requirement": validation_result,
+            "component_type": validation_result.get("component_type", raw_payload.get("component_type", "packed_red_blood_cells")),
             "hospital_id": hospital_id,
             "inventories": raw_payload.get("inventories"),
             "donors": raw_payload.get("donors"),
@@ -636,8 +680,8 @@ class CoordinatorAgent:
             }
 
         # Step 3: MATCHED (MatchingAgent)
-        reply, error_reply = self._ask(
-            "MatchingAgent",
+        reply, error_reply = self._ask_capability(
+            "find-compatible-blood-sources",
             A2AMessageType.MATCHING_FIND_SOURCES_REQUEST,
             matching_payload,
             corr_id,
@@ -698,8 +742,8 @@ class CoordinatorAgent:
                     state_history=state_history,
                     correlation_id=corr_id,
                 )
-            reply, error_reply = self._ask(
-                "LocationAgent",
+            reply, error_reply = self._ask_capability(
+                "calculate-source-distance",
                 A2AMessageType.LOCATION_CALCULATE_DISTANCES_REQUEST,
                 {
                     "hospital_id": hospital_id,
@@ -796,14 +840,17 @@ class CoordinatorAgent:
             "skipped": "preview only; nothing was reserved",
         }
         if persist and self.db and blood_request_model:
-            reply, error_reply = self._ask(
-                "NotificationAgent",
+            reply, error_reply = self._ask_capability(
+                "dispatch-fulfillment-notifications",
                 A2AMessageType.NOTIFICATION_DISPATCH_REQUEST,
                 {
                     "hospital_id": hospital_id or 1,
                     "request_id": req_id,
                     "fulfillment_plan": fulfillment_plan,
                     "hospital_name": hosp_name,
+                    "hospital_coords": {"latitude": hosp_lat, "longitude": hosp_lon},
+                    "blood_group": validation_result["blood_group"],
+                    "component_type": validation_result.get("component_type", "packed_red_blood_cells"),
                 },
                 corr_id,
             )

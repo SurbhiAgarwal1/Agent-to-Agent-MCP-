@@ -77,6 +77,7 @@ def create_blood_request(
         hospital_id=payload.hospital_id,
         created_by_user_id=current_user.id,
         blood_group=payload.blood_group.value,
+        component_type=payload.component_type,
         units_required=payload.units_required,
         urgency=payload.urgency.value,
         status=RequestStatus.PENDING.value,
@@ -97,6 +98,7 @@ def create_blood_request(
         details={
             "hospital_id": payload.hospital_id,
             "blood_group": payload.blood_group.value,
+            "component_type": payload.component_type,
             "units": payload.units_required,
         },
     )
