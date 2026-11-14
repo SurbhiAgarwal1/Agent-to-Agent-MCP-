@@ -32,6 +32,8 @@ class LocalAgentRegistry:
         agent = LocalAgent(agent_id, name, frozenset(skill.strip().lower() for skill in skills), handler)
         self._agents[agent_id] = agent
         self.bus.register_agent(agent_id, handler)
+        if name and name != agent_id:
+            self.bus.register_agent(name, handler)
 
     def select(self, capability: str) -> LocalAgent:
         matches = [agent for agent in self._agents.values() if capability.lower() in agent.skills]

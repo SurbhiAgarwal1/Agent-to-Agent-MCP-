@@ -49,12 +49,15 @@ async def call_remote_agent_by_skill(
     correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Discover an A2A agent by advertised capability and send a JSON task."""
+    import inspect
+    kwargs: Dict[str, Any] = {"skill": skill, "operation": operation}
+    sig = inspect.signature(call_remote_agent)
+    if "correlation_id" in sig.parameters:
+        kwargs["correlation_id"] = correlation_id
     return await call_remote_agent(
         skill,
         payload,
-        skill=skill,
-        operation=operation,
-        correlation_id=correlation_id,
+        **kwargs,
     )
 
 
@@ -150,7 +153,6 @@ async def _call_remote_agent(
                 request = SendMessageRequest(
                     message=Message(
                         message_id=message_id,
-                        task_id=task_id,
                         context_id=context_id,
                         role="ROLE_USER",
                         parts=[Part(text=json.dumps(payload, default=str))],

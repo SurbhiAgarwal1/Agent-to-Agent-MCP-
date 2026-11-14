@@ -36,6 +36,8 @@ ENV/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # Testing & Coverage
 .pytest_cache/

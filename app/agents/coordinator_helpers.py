@@ -333,7 +333,7 @@ def invoke_coordinator_from_gateway(
     from app.agents.coordinator_agent import CoordinatorAgent
 
     if should_call_coordinator_over_a2a(db):
-        from app.agents.a2a.client import call_remote_agent_by_skill
+        from app.agents.a2a.client import call_remote_agent
 
         payload: Dict[str, Any] = {
             "request_id": request_id,
@@ -343,9 +343,10 @@ def invoke_coordinator_from_gateway(
         }
         try:
             result = run_coro_sync(
-                call_remote_agent_by_skill(
-                    "coordinate",
+                call_remote_agent(
+                    "COORDINATORAGENT",
                     payload,
+                    skill="coordinate",
                     operation="COORDINATE_REQUEST",
                 )
             )

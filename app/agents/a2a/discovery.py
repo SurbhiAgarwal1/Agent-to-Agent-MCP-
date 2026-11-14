@@ -116,28 +116,24 @@ async def fetch_agent_card(base_url: str, *, http_client: Optional[httpx.AsyncCl
     response = await _get(http_client, card_url, timeout)
     response.raise_for_status()
     card = response.json()
-    required = ("name", "description", "version", "supportedInterfaces", "capabilities", "defaultInputModes", "defaultOutputModes", "skills", "agentId", "metadata")
-    missing = [key for key in required if not isinstance(card, dict) or not card.get(key)]
-    if missing:
-        raise ValueError(f"Invalid Agent Card at {card_url}; missing {', '.join(missing)}")
-    try:
-        from google.protobuf.json_format import ParseDict
-        from a2a.types import AgentCard
-        ParseDict(card, AgentCard(), ignore_unknown_fields=True)
-    except Exception as exc:
-        raise ValueError(f"Invalid official A2A Agent Card at {card_url}: {type(exc).__name__}") from exc
-    interfaces = card.get("supportedInterfaces", [])
-    if not any(isinstance(item, dict) and item.get("url") and item.get("protocolBinding") == "JSONRPC" for item in interfaces):
-        raise ValueError(f"Agent Card at {card_url} has no JSON-RPC interface")
+    if not isinstance(card, dict) or not card.get("name") or not card.get("skills"):
+        raise ValueError(f"Invalid Agent Card at {card_url}; missing name or skills")
+
     metadata = card.get("metadata") or {}
-    if metadata.get("availability") not in {"available", "healthy", "ok"}:
+    if metadata.get("availability") and metadata["availability"] not in {"available", "healthy", "ok"}:
         raise ValueError(f"Agent Card at {card_url} reports unavailable")
-    health_url = metadata.get("healthUrl") or f"{base_url.rstrip('/')}/health"
-    health = await _get(http_client, health_url, timeout)
-    health.raise_for_status()
-    health_data = health.json()
-    if health_data.get("status") not in {"healthy", "available", "ok"}:
-        raise ValueError(f"Agent health check failed at {health_url}")
+
+    health_url = metadata.get("healthUrl")
+    if health_url:
+        try:
+            health = await _get(http_client, health_url, timeout)
+            health.raise_for_status()
+            health_data = health.json()
+            if isinstance(health_data, dict) and health_data.get("status") not in {"healthy", "available", "ok"}:
+                raise ValueError(f"Agent health check failed at {health_url}")
+        except Exception as exc:
+            raise ValueError(f"Agent health check failed at {health_url}: {exc}") from exc
+
     return card
 
 
@@ -156,9 +152,12 @@ async def discover_agent_by_skill(skill: str, *, preferred_agent: Optional[str] 
     last_error: Optional[Exception] = None
     for base_url, card in await discover_agents(candidate_urls=urls, http_client=http_client, timeout=timeout):
         if card_matches_skill(card, skill):
-            interface = next(item for item in card["supportedInterfaces"] if item.get("protocolBinding") == "JSONRPC")
-            parsed = urlparse(interface["url"])
-            return f"{parsed.scheme}://{parsed.netloc}", card
+            interfaces = card.get("supportedInterfaces") or []
+            interface = next((item for item in interfaces if isinstance(item, dict) and item.get("protocolBinding") == "JSONRPC"), None)
+            if interface and interface.get("url"):
+                parsed = urlparse(interface["url"])
+                return f"{parsed.scheme}://{parsed.netloc}", card
+            return base_url, card
     if not urls:
         raise RuntimeError("No A2A bootstrap endpoints are configured; set A2A_AGENT_URLS or A2A_AGENT_REGISTRY")
     raise RuntimeError(f"No available A2A agent advertises capability '{skill}' from configured bootstrap endpoints: {urls}") from last_error
