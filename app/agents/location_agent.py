@@ -11,6 +11,7 @@ Architecture & Future Extensibility:
   without modifying the Location Agent's callers or downstream agents.
 """
 
+import os
 from typing import Any, Dict, Optional, Union
 
 
@@ -81,6 +82,18 @@ class LocationAgent:
             )
 
         candidates = message.payload.get("candidates", [])
+        if message.payload.get("discover_nearby") and not candidates:
+            from app.services.osm_discovery import discover_nearby_blood_banks, osm_discovery_enabled
+            if osm_discovery_enabled():
+                osm = discover_nearby_blood_banks(hosp_lat, hosp_lon, float(os.getenv("OSM_RADIUS_KM", "25")), int(os.getenv("OSM_MAX_RESULTS", "15")))
+            else:
+                osm = {"source": "openstreetmap", "available": False, "error": "OSM discovery disabled", "places": []}
+            return message.create_response(
+                sender_agent="LocationAgent",
+                message_type=A2AMessageType.LOCATION_DISTANCES_CALCULATED_EVENT,
+                payload={"hospital_id": message.payload.get("hospital_id"), "hospital_coords": hospital_coords,
+                         "candidates_count": 0, "candidates": [], "osm_nearby_blood_banks": osm},
+            )
         annotated_candidates = []
 
         for cand in candidates:

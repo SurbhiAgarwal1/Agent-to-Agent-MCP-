@@ -43,5 +43,9 @@ def process_natural_language_request(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active membership in the requested hospital is required.")
     if result.get("status") == "FAILED":
         from fastapi import HTTPException, status
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Natural-language request workflow could not be completed.")
+        import os
+        detail = "Natural-language request workflow could not be completed."
+        if os.getenv("ENVIRONMENT", "development").lower() != "production":
+            detail += f" Reason: {str(result.get('message'))[:400]}"
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
     return result

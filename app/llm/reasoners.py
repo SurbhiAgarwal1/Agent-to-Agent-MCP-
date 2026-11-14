@@ -42,6 +42,12 @@ class MockReasoner(LLMReasoner):
     def generate_plan(self, user_request: str) -> ReasoningResult:
         text = user_request or ""
         blood_match = re.search(r"\b(AB|A|B|O)\s*([+-])(?!\w)", text, re.IGNORECASE)
+        if not blood_match:
+            # Spoken forms: "A positive", "O negative", "AB pos", "B-negative".
+            spoken = re.search(r"\b(AB|A|B|O)[\s-]+(positive|negative|pos|neg)\b", text, re.IGNORECASE)
+            if spoken:
+                sign = "+" if spoken.group(2).lower().startswith("pos") else "-"
+                blood_match = re.match(r"(AB|A|B|O)([+-])", spoken.group(1) + sign, re.IGNORECASE)
         units_match = re.search(r"\b(\d+)\s*(?:units?|bags?|pints?|packs?)\b", text, re.IGNORECASE)
         location_match = re.search(
             r"\b(?:at|in|near|to)\s+([A-Za-z][A-Za-z0-9 .'-]*?)"

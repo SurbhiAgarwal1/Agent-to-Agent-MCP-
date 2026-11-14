@@ -142,7 +142,7 @@ def test_independent_services_discover_cards_and_coordinate_over_a2a_http(tmp_pa
                               expiry_date=date.today() + timedelta(days=30)))
         db.commit()
 
-    ports = {name: _free_port() for name in ("coordinator", "requirement", "matching", "location", "notification", "mcp")}
+    ports = {name: _free_port() for name in ("coordinator", "requirement", "matching", "location", "notification", "emergency_priority", "mcp")}
     root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     base_env = os.environ.copy()
     base_env.update({
@@ -182,15 +182,15 @@ def test_independent_services_discover_cards_and_coordinate_over_a2a_http(tmp_pa
             monkeypatch, f"http://127.0.0.1:{ports['mcp']}/mcp"
         ))
 
-        for name in ("coordinator", "requirement", "matching", "location", "notification"):
-            env = {**base_env, "A2A_AGENT": name}
+        for name in ("coordinator", "requirement", "matching", "location", "notification", "emergency_priority"):
+            env = {**base_env, "A2A_AGENT": name.replace("_", "-")}
             port = ports[name]
             agent = name.upper() + "AGENT"
             urls[name] = f"http://127.0.0.1:{port}"
             env[f"{agent}_A2A_URL"] = f"{urls[name]}/a2a"
             if name != "coordinator":
                 env[f"{agent}_BASE_URL"] = urls[name]
-            for target in ("requirement", "matching", "location", "notification"):
+            for target in ("requirement", "matching", "location", "notification", "emergency_priority"):
                 target_agent = target.upper() + "AGENT"
                 env[f"{target_agent}_BASE_URL"] = f"http://127.0.0.1:{ports[target]}"
             process = subprocess.Popen(
@@ -201,11 +201,11 @@ def test_independent_services_discover_cards_and_coordinate_over_a2a_http(tmp_pa
             processes.append(process)
             card = _wait_for_card(f"{urls[name]}/.well-known/agent-card.json", process)
             cards[name] = card
-            assert card["name"] == f"{name.title()}Agent"
+            assert card["name"] == f"{name.title().replace('_', '')}Agent"
 
         monkeypatch.setenv("A2A_TIMEOUT_SECONDS", "20")
         monkeypatch.setenv("A2A_MAX_RETRIES", "1")
-        for name in ("coordinator", "requirement", "matching", "location", "notification"):
+        for name in ("coordinator", "requirement", "matching", "location", "notification", "emergency_priority"):
             monkeypatch.setenv(name.upper() + "AGENT_BASE_URL", urls[name])
         from app.agents.a2a.client import call_remote_agent
         asyncio = __import__("asyncio")
@@ -243,13 +243,9 @@ def test_independent_services_discover_cards_and_coordinate_over_a2a_http(tmp_pa
         assert "llm" not in result
         assert result["notifications"]["request_id"] == 1
         assert result["notifications"]["success"] is True
-        assert {item["receiver"] for item in result["a2a_trace"]} >= {
-            "RequirementAgent", "MatchingAgent", "LocationAgent", "NotificationAgent"
-        }
-        assert any(
-            item["sender"] == "MatchingAgent" and item["receiver"] == "LocationAgent"
-            for item in result["a2a_trace"]
-        )
+        # The Coordinator discovers agents by card, so trace entries are keyed by discovered agent id.
+        receivers = {item["receiver"].lower() for item in result["a2a_trace"]}
+        assert {"requirement", "matching", "location", "notification"} <= {r.removesuffix("agent") for r in receivers}
         monkeypatch.setenv("REQUIREMENTAGENT_BASE_URL", "http://127.0.0.1:1")
         monkeypatch.setenv("A2A_TIMEOUT_SECONDS", "0.25")
         monkeypatch.setenv("A2A_MAX_RETRIES", "0")

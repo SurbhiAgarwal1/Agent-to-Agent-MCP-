@@ -46,14 +46,15 @@ def _validate_donor_response_link(row, token):
 def _record_donor_response(row, token, response, db):
     from app.services.notification_providers.delivery import token_digest
     _validate_donor_response_link(row,token)
-    if row.delivery_status not in {"sent","delivered"}:raise HTTPException(409,"This notification was not delivered")
+    from app.services.notification_providers.delivery import respondable_delivery_statuses
+    if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered")
     now=datetime.now(timezone.utc)
     changed=db.query(DonorNotification).filter(
         DonorNotification.id==row.id,
         DonorNotification.response_status=="pending",
         DonorNotification.response_token_hash==token_digest(token),
         DonorNotification.response_token_expires_at>now,
-        DonorNotification.delivery_status.in_(("sent","delivered")),
+        DonorNotification.delivery_status.in_(respondable_delivery_statuses()),
     ).update({
         DonorNotification.response_status:response,
         DonorNotification.response_at:now,
@@ -66,6 +67,9 @@ def _record_donor_response(row, token, response, db):
         db.rollback()
         raise HTTPException(409,"Response link is invalid or has already been used")
     db.commit();db.refresh(row)
+    from app.services.notification_providers.delivery import notify_hospital_of_response
+    if row.blood_request_id:
+        notify_hospital_of_response({"blood_request_id":row.blood_request_id,"source_type":"DONOR","source_id":row.donor_id,"source_name":None,"notification_id":row.id,"response_status":row.response_status,"confirmed_units":1 if row.response_status=="accepted" else None,"reason":None})
     return _notification(row)
 
 @app.get("/health")
@@ -226,6 +230,8 @@ def send_donor_notification(payload:NotificationCreate,db:Session=Depends(get_db
     outcome=deliver_notification(payload.channel,donor.email,donor.phone,"Blood donation request",body,status_callback=twilio_callback_url("donor",row.id))
     row.delivery_status=outcome.status;row.sent_at=outcome.sent_at;row.error_details=outcome.error;row.status=outcome.status
     db.commit();db.refresh(row)
+    from app.services.notification_providers.delivery import log_dev_response_link
+    log_dev_response_link(outcome.status,"donor",row.id,response_url("donor",row.id,token))
     return _notification(row)
 
 @app.get("/api/v1/donor-notifications/{notification_id}",response_model=NotificationResponse)
@@ -239,7 +245,8 @@ def donor_response_form(notification_id:int,token:str,db:Session=Depends(get_db)
     row=db.get(DonorNotification,notification_id)
     if not row:raise HTTPException(404,"Notification not found")
     _validate_donor_response_link(row,token)
-    if row.delivery_status not in {"sent","delivered"}:raise HTTPException(409,"This notification was not delivered")
+    from app.services.notification_providers.delivery import respondable_delivery_statuses
+    if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered")
     return HTMLResponse(f"""<!doctype html><meta name='viewport' content='width=device-width'><h1>Donation request response</h1><form method='post' action='/api/v1/donor-notifications/{notification_id}/respond?token={token}'><label>Response <select name='response_status'><option value='accepted'>Accept</option><option value='declined'>Decline</option><option value='unavailable'>Unavailable</option><option value='no_response'>No response</option></select></label><button type='submit'>Submit response</button></form>""",headers={"Cache-Control":"no-store","Referrer-Policy":"no-referrer"})
 
 @app.post("/api/v1/donor-notifications/{notification_id}/respond",response_model=NotificationResponse)

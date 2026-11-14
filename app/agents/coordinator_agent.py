@@ -865,11 +865,14 @@ class CoordinatorAgent:
             else:
                 notifications_result = reply
 
+        osm_nearby = self._discover_osm_facilities(hospital_id, hosp_name, hosp_address, hosp_lat, hosp_lon, corr_id)
+
         return {
             "success": True,
             "current_state": current_state.value,
             "correlation_id": corr_id,
             "request_id": req_id,
+            "osm_nearby_blood_banks": osm_nearby,
             "hospital": {
                 "hospital_id": hospital_id,
                 "name": hosp_name,
@@ -885,6 +888,30 @@ class CoordinatorAgent:
             "notifications": notifications_result,
             "state_history": state_history,
         }
+
+    def _discover_osm_facilities(self, hospital_id, hosp_name, hosp_address, hosp_lat, hosp_lon, corr_id):
+        """Ask the Location agent for OpenStreetMap blood banks near the hospital (best effort, off by default)."""
+        from app.services.osm_discovery import osm_discovery_enabled
+        if not osm_discovery_enabled():
+            return None
+        try:
+            reply, error_reply = self._ask_capability(
+                "calculate-source-distance",
+                A2AMessageType.LOCATION_CALCULATE_DISTANCES_REQUEST,
+                {
+                    "hospital_id": hospital_id,
+                    "hospital_coords": {"hospital_id": hospital_id, "name": hosp_name, "address": hosp_address,
+                                        "latitude": hosp_lat, "longitude": hosp_lon},
+                    "candidates": [],
+                    "discover_nearby": True,
+                },
+                corr_id,
+            )
+        except Exception as exc:  # discovery must never fail the blood request
+            return {"source": "openstreetmap", "available": False, "error": str(exc)[:300], "places": []}
+        if error_reply is not None or not isinstance(reply, dict):
+            return {"source": "openstreetmap", "available": False, "error": "Location agent could not run discovery", "places": []}
+        return reply.get("osm_nearby_blood_banks")
 
     @staticmethod
     def _failure_response(

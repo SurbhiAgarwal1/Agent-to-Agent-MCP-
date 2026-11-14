@@ -81,7 +81,7 @@ def _seed_isolated_databases(tmp_path):
 
 def test_notification_agent_uses_existing_mcp_stack_and_coordinator_receives_results(tmp_path,monkeypatch):
     bank_url,donor_url,core_url=_seed_isolated_databases(tmp_path)
-    ports={name:_port() for name in ("bank_api","donor_api","mcp","coordinator","requirement","matching","location","notification")}
+    ports={name:_port() for name in ("bank_api","donor_api","mcp","coordinator","requirement","matching","location","notification","emergency_priority")}
     root=Path(__file__).resolve().parents[1]
     env=os.environ.copy()
     env.update({
@@ -101,13 +101,13 @@ def test_notification_agent_uses_existing_mcp_stack_and_coordinator_receives_res
             ("donor_api",[sys.executable,"-m","uvicorn","donor_api.main:app","--host","127.0.0.1","--port",str(ports["donor_api"])]),
             ("mcp",[sys.executable,"-m","app.mcp.protocol_server"]),
         ]
-        for name in ("coordinator","requirement","matching","location","notification"):
+        for name in ("coordinator","requirement","matching","location","notification","emergency_priority"):
             specs.append((name,[sys.executable,"-m","uvicorn","app.agents.a2a.service:create_service","--factory","--host","127.0.0.1","--port",str(ports[name])]))
         for name,command in specs:
-            child_env={**env,"A2A_AGENT":name,"MCP_PORT":str(ports["mcp"])}
-            if name in {"coordinator","requirement","matching","location","notification"}:
+            child_env={**env,"A2A_AGENT":name.replace("_","-"),"MCP_PORT":str(ports["mcp"])}
+            if name in {"coordinator","requirement","matching","location","notification","emergency_priority"}:
                 child_env[f"{name.upper()}AGENT_A2A_URL"]=f"http://127.0.0.1:{ports[name]}/a2a"
-            for target in ("coordinator","requirement","matching","location","notification"):
+            for target in ("coordinator","requirement","matching","location","notification","emergency_priority"):
                 child_env[f"{target.upper()}AGENT_BASE_URL"]=f"http://127.0.0.1:{ports[target]}"
             proc=subprocess.Popen(command,cwd=root,env=child_env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             procs.append(proc)

@@ -190,3 +190,30 @@ def deliver_notification(channel: str, email: str, phone: str, subject: str, bod
                     time.sleep(0.1 * (attempt + 1))
         return DeliveryOutcome("failed", error=last_error[:1000])
     return DeliveryOutcome("failed", error=f"unsupported channel: {channel}")
+
+
+def respondable_delivery_statuses() -> tuple[str, ...]:
+    """Delivery states from which a recipient may answer. Console-mode ("simulated") sends are
+    answerable outside production so the whole accept flow can be exercised without SMS/email."""
+    if os.getenv("ENVIRONMENT", "development").lower() == "production":
+        return ("sent", "delivered")
+    return ("sent", "delivered", "simulated")
+
+
+def log_dev_response_link(outcome_status: str, recipient_type: str, notification_id: int, url: str) -> None:
+    """Print the answer link when nothing was really sent (development only)."""
+    if outcome_status == "simulated" and os.getenv("ENVIRONMENT", "development").lower() != "production":
+        logger.warning("DEV response link for %s notification %s: %s", recipient_type, notification_id, url)
+
+
+def notify_hospital_of_response(event: dict) -> None:
+    """Best-effort push of a recipient's answer to the hospital backend; never raises."""
+    base = os.getenv("HOSPITAL_WEBHOOK_URL", "").strip()
+    if not base:
+        return
+    try:
+        import httpx
+        from app.security.service_auth import service_auth_headers
+        httpx.post(base, json=event, headers=service_auth_headers(), timeout=5.0)
+    except Exception as exc:  # the hospital can still pull the response summary
+        logger.warning("Hospital response webhook failed: %s", type(exc).__name__)

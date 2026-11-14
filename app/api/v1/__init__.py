@@ -8,6 +8,7 @@ from app.api.v1.pharmacy import router as pharmacy_router
 from app.observability.admin_telemetry import router as admin_telemetry_router
 from app.api.v1.communication import router as communication_router
 from app.api.v1.calling import router as calling_router
+from app.api.v1.responses import router as responses_router
 
 api_v1_router = APIRouter()
 api_v1_router.include_router(
@@ -40,4 +41,7 @@ api_v1_router.include_router(
 )
 api_v1_router.include_router(
     calling_router,
+)
+api_v1_router.include_router(
+    responses_router,
 )

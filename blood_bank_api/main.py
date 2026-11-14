@@ -142,7 +142,8 @@ def _validate_bank_response_link(row, token):
 def _record_bank_response(row, token, payload, db):
     from app.services.notification_providers.delivery import token_digest
     _validate_bank_response_link(row,token)
-    if row.delivery_status not in {"sent","delivered"}:raise HTTPException(409,"This notification was not delivered to the recipient")
+    from app.services.notification_providers.delivery import respondable_delivery_statuses
+    if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered to the recipient")
     if payload.response_status=="accepted" and not payload.confirmed_available_units:raise HTTPException(422,"Accepted response requires confirmed available units")
     if payload.response_status=="partially_available" and (payload.confirmed_available_units is None or not 0<payload.confirmed_available_units<row.required_units):raise HTTPException(422,"Partial response requires a positive quantity below the requested units")
     if payload.response_status in {"unavailable","rejected"} and not payload.rejection_reason:raise HTTPException(422,"Unavailable or rejected responses require a reason")
@@ -152,7 +153,7 @@ def _record_bank_response(row, token, payload, db):
         BloodBankNotification.response_status=="pending",
         BloodBankNotification.response_token_hash==token_digest(token),
         BloodBankNotification.response_token_expires_at>now,
-        BloodBankNotification.delivery_status.in_(("sent","delivered")),
+        BloodBankNotification.delivery_status.in_(respondable_delivery_statuses()),
     ).update({
         BloodBankNotification.response_status:payload.response_status,
         BloodBankNotification.response_at:now,
@@ -165,6 +166,9 @@ def _record_bank_response(row, token, payload, db):
         db.rollback()
         raise HTTPException(409,"Response link is invalid or has already been used")
     db.commit();db.refresh(row)
+    from app.services.notification_providers.delivery import notify_hospital_of_response
+    bank=db.get(BloodBank,row.blood_bank_id)
+    notify_hospital_of_response({"blood_request_id":row.blood_request_id,"source_type":"BLOOD_BANK","source_id":row.blood_bank_id,"source_name":bank.name if bank else None,"notification_id":row.id,"response_status":row.response_status,"confirmed_units":row.confirmed_available_units,"reason":row.rejection_reason})
     return _bank_notification(row)
 
 @app.post("/api/v1/blood-bank-notifications", status_code=201, response_model=BankNotificationRecord)
@@ -190,6 +194,8 @@ def send_blood_bank_notification(payload: BankNotificationCreate, db: Session = 
     outcome=deliver_notification(payload.channel,bank.contact_email,bank.contact_number,"Blood request response required",message,status_callback=twilio_callback_url("bank",row.id))
     row.delivery_status=outcome.status;row.sent_at=outcome.sent_at;row.error_details=outcome.error
     db.commit();db.refresh(row)
+    from app.services.notification_providers.delivery import log_dev_response_link
+    log_dev_response_link(outcome.status,"bank",row.id,response_url("bank",row.id,token))
     return _bank_notification(row)
 
 @app.get("/api/v1/blood-bank-notifications/{notification_id}",response_model=BankNotificationRecord)
@@ -211,7 +217,8 @@ def blood_bank_response_form(notification_id:int,token:str,db:Session=Depends(ge
     row=db.get(BloodBankNotification,notification_id)
     if not row:raise HTTPException(404,"Notification not found")
     _validate_bank_response_link(row,token)
-    if row.delivery_status not in {"sent","delivered"}:raise HTTPException(409,"This notification was not delivered")
+    from app.services.notification_providers.delivery import respondable_delivery_statuses
+    if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered")
     return HTMLResponse(f"""<!doctype html><meta name='viewport' content='width=device-width'><h1>Blood bank request response</h1><p>Request {row.blood_group} {row.component_type}: {row.required_units} unit(s)</p><form method='post' action='/api/v1/blood-bank-notifications/{notification_id}/respond?token={token}'><label>Response <select name='response_status'><option value='accepted'>Accepted</option><option value='partially_available'>Partially available</option><option value='unavailable'>Unavailable</option><option value='rejected'>Rejected</option></select></label><p>Confirmed available units <input type='number' name='confirmed_available_units' min='0'></p><p>Reason <input name='rejection_reason' maxlength='500'></p><button type='submit'>Submit response</button></form>""",headers={"Cache-Control":"no-store","Referrer-Policy":"no-referrer"})
 
 @app.post("/api/v1/blood-bank-notifications/{notification_id}/respond",response_model=BankNotificationRecord)

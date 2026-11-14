@@ -44,11 +44,13 @@ def test_preview_flow_runs_each_agent_through_the_coordinator(world):
     res = CoordinatorAgent(db=world).coordinate(1, persist=False)
     assert res["success"]
     assert pairs(res["a2a_trace"]) == [
-        (COORDINATOR_NAME, "RequirementAgent", T.REQUIREMENT_VALIDATE_REQUEST),
+        (COORDINATOR_NAME, "requirement", T.REQUIREMENT_VALIDATE_REQUEST),
         ("RequirementAgent", COORDINATOR_NAME, T.REQUIREMENT_VALIDATED_EVENT),
-        (COORDINATOR_NAME, "MatchingAgent", T.MATCHING_FIND_SOURCES_REQUEST),
+        (COORDINATOR_NAME, "emergency-priority", T.EMERGENCY_PRIORITY_EVALUATE_REQUEST),
+        ("emergency-priority", COORDINATOR_NAME, T.EMERGENCY_PRIORITY_EVALUATED_EVENT),
+        (COORDINATOR_NAME, "matching", T.MATCHING_FIND_SOURCES_REQUEST),
         ("MatchingAgent", COORDINATOR_NAME, T.MATCHING_SOURCES_FOUND_EVENT),
-        (COORDINATOR_NAME, "LocationAgent", T.LOCATION_CALCULATE_DISTANCES_REQUEST),
+        (COORDINATOR_NAME, "location", T.LOCATION_CALCULATE_DISTANCES_REQUEST),
         ("LocationAgent", COORDINATOR_NAME, T.LOCATION_DISTANCES_CALCULATED_EVENT),
     ]
 
@@ -57,7 +59,7 @@ def test_persisted_flow_notifies_through_the_bus_after_reservation(world):
     res = CoordinatorAgent(db=world).coordinate(1, persist=True)
     trace = pairs(res["a2a_trace"])
     assert trace[-2:] == [
-        (COORDINATOR_NAME, "NotificationAgent", T.NOTIFICATION_DISPATCH_REQUEST),
+        (COORDINATOR_NAME, "notification", T.NOTIFICATION_DISPATCH_REQUEST),
         ("NotificationAgent", COORDINATOR_NAME, T.NOTIFICATION_DISPATCHED_EVENT),
     ]
     assert res["notifications"]["dispatched_count"] >= 2   # hospital + at least one source
@@ -97,7 +99,7 @@ def test_validation_failure_travels_as_an_a2a_error(world):
     res = CoordinatorAgent(db=world).coordinate({"request_id": 5, "hospital_id": 1, "blood_group": "ZZ",
                                                  "units_required": 1, "urgency": "LOW"}, persist=False)
     assert res["success"] is False and res["failed_at"] == "VALIDATION"
-    assert res["a2a_trace"][-1]["type"] == T.A2A_ERROR and res["a2a_trace"][-1]["sender"] == "RequirementAgent"
+    assert res["a2a_trace"][-1]["type"] == T.A2A_ERROR and res["a2a_trace"][-1]["sender"] in {"requirement", "RequirementAgent"}
     assert res["details"]
 
 
@@ -107,7 +109,7 @@ def test_a_crashing_agent_is_reported_not_raised(world):
     def boom(_msg):
         raise RuntimeError("routing service down")
 
-    coord.bus.register_agent("LocationAgent", boom)
+    coord.bus.register_agent("location", boom)   # the registry selects agents by id
     res = coord.coordinate(1, persist=True)
     assert res["success"] is False and res["failed_at"] == "LOCATION"
     assert "routing service down" in res["error"]

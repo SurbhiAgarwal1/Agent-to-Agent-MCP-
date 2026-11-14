@@ -12,6 +12,7 @@ from app.mcp.tools.matching_tool import handle_find_blood_sources
 from app.mcp.tools.location_tool import handle_calculate_distance
 from app.mcp.tools.notification_tool import handle_dispatch_notifications
 from app.mcp.data_api_tools import register_data_api_tools
+from app.mcp.osm_tools import register_osm_tools
 from app.observability.tracing import configure_telemetry, instrument_asgi
 
 configure_telemetry("blood-donation-mcp")
@@ -105,6 +106,7 @@ def create_mcp_app():
 # Data capabilities are HTTP-backed tools on this same official Streamable HTTP server.
 # The standalone data APIs remain independently deployable and own their databases.
 register_data_api_tools(mcp)
+register_osm_tools(mcp)
 
 
 if __name__ == "__main__":

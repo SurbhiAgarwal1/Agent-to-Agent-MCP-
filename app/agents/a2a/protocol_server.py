@@ -243,6 +243,9 @@ class DomainAgentExecutor(AgentExecutor):
                 candidates = payload.get("candidates")
                 if candidates is None:
                     result = await call_remote_tool("calculate_distance", payload)
+                elif payload.get("discover_nearby") and not candidates:
+                    # Discovery-only request: look for additional nearby facilities on OpenStreetMap.
+                    result = {"candidates": [], "osm_nearby_blood_banks": await _discover_osm(origin)}
                 else:
                     located = []
                     nearby_distances = {}
@@ -250,24 +253,37 @@ class DomainAgentExecutor(AgentExecutor):
                         for source_type, tool_name in (("BLOOD_BANK", "find_nearby_blood_banks"), ("DONOR", "find_nearby_donors")):
                             nearby = await call_remote_tool(tool_name, {"latitude": origin["latitude"], "longitude": origin["longitude"], "radius_km": 500, "limit": 200})
                             for item in nearby.get("items", []): nearby_distances[(source_type, item["id"])] = item.get("distance_km")
-                    for candidate in candidates:
-                        lat, lon = candidate.get("latitude"), candidate.get("longitude")
-                        if lat is None or lon is None:
-                            located.append(candidate)
-                            continue
-                        distance = await call_remote_tool(
-                            "calculate_distance",
-                            {
-                                "origin_latitude": origin["latitude"],
-                                "origin_longitude": origin["longitude"],
-                                "destination_latitude": lat,
-                                "destination_longitude": lon,
-                                "include_eta": True,
-                            },
-                        )
+                    # Only the nearest candidates need a routed distance; one MCP call per candidate is too slow
+                    # when the synthetic dataset yields hundreds of matches.
+                    limit = max(1, int(os.getenv("LOCATION_MAX_CANDIDATES", "40")))
+
+                    def _rank(candidate):
+                        known = nearby_distances.get((candidate.get("source_type"), candidate.get("source_id")))
+                        return float("inf") if known is None else known
+
+                    ordered = sorted(candidates, key=_rank)
+                    to_locate = [c for c in ordered if c.get("latitude") is not None and c.get("longitude") is not None][:limit]
+                    passthrough = [c for c in candidates if c.get("latitude") is None or c.get("longitude") is None]
+                    gate = asyncio.Semaphore(8)
+
+                    async def _locate(candidate):
+                        async with gate:
+                            distance = await call_remote_tool(
+                                "calculate_distance",
+                                {
+                                    "origin_latitude": origin["latitude"],
+                                    "origin_longitude": origin["longitude"],
+                                    "destination_latitude": candidate["latitude"],
+                                    "destination_longitude": candidate["longitude"],
+                                    "include_eta": True,
+                                },
+                            )
                         api_distance = nearby_distances.get((candidate.get("source_type"), candidate.get("source_id")))
-                        if api_distance is not None: distance["distance_km"] = api_distance
-                        located.append({**candidate, **distance})
+                        if api_distance is not None:
+                            distance["distance_km"] = api_distance
+                        return {**candidate, **distance}
+
+                    located = [*await asyncio.gather(*(_locate(c) for c in to_locate)), *passthrough]
                     result = {
                         "candidates": sorted(
                             located, key=lambda item: item.get("distance_km", float("inf"))
@@ -369,6 +385,31 @@ class DomainAgentExecutor(AgentExecutor):
         return None
 
 
+async def _discover_osm(origin: dict) -> dict:
+    """Ask the MCP server for OpenStreetMap blood banks near the hospital; never raises."""
+    from app.mcp.client import call_remote_tool
+    from app.services.osm_discovery import osm_discovery_enabled
+    if not osm_discovery_enabled():
+        return {"source": "openstreetmap", "available": False, "error": "OSM discovery disabled", "places": []}
+    try:
+        return await call_remote_tool("discover_osm_blood_banks", {
+            "latitude": origin["latitude"], "longitude": origin["longitude"],
+            "radius_km": float(os.getenv("OSM_RADIUS_KM", "25")), "limit": int(os.getenv("OSM_MAX_RESULTS", "15")),
+        })
+    except Exception as exc:  # discovery is additive; a failure must not break the request
+        return {"source": "openstreetmap", "available": False, "error": str(exc)[:300], "places": []}
+
+
+def _advertised_a2a_url(agent_id: str) -> str:
+    """Resolve the URL this service advertises; hyphenated names (emergency-priority) have two env spellings."""
+    names = [agent_id, os.getenv("A2A_AGENT", "")]
+    for name in names:
+        key = (name or "").strip().replace("-", "_").upper()
+        if key and os.getenv(f"{key}AGENT_A2A_URL"):
+            return os.environ[f"{key}AGENT_A2A_URL"]
+    return os.getenv("A2A_PUBLIC_URL", "http://localhost:8000/a2a")
+
+
 def build_agent_app(agent_name: str, description: str, skills: list[str]) -> Any:
     """Build a JSON-RPC A2A service, its well-known Agent Card endpoint, and /a2a service auth."""
     configure_telemetry(agent_name)
@@ -393,7 +434,7 @@ def build_agent_app(agent_name: str, description: str, skills: list[str]) -> Any
         ) for skill in skills],
         supported_interfaces=[
             AgentInterface(
-                url=os.getenv(f"{agent_id.replace('-', '_').upper()}AGENT_A2A_URL", os.getenv("A2A_PUBLIC_URL", "http://localhost:8000/a2a")),
+                url=_advertised_a2a_url(agent_id),
                 protocol_binding="JSONRPC",
                 protocol_version="1.0",
             )
