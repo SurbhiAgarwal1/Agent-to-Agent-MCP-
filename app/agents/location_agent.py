@@ -94,36 +94,35 @@ class LocationAgent:
                 payload={"hospital_id": message.payload.get("hospital_id"), "hospital_coords": hospital_coords,
                          "candidates_count": 0, "candidates": [], "osm_nearby_blood_banks": osm},
             )
-        annotated_candidates = []
+        annotated_candidates = [dict(cand) for cand in candidates]
+        routable: list[int] = []
+        for index, item in enumerate(annotated_candidates):
+            item["distance_km"] = None
+            item["estimated_time"] = None
+            dest_lat, dest_lon = item.get("latitude"), item.get("longitude")
+            if dest_lat is None or dest_lon is None:
+                continue
+            try:
+                item["latitude"], item["longitude"] = float(dest_lat), float(dest_lon)
+                self.validate_coordinates(item["latitude"], item["longitude"], label=f"Candidate {item.get('source_id')}")
+                routable.append(index)
+            except Exception as ex:
+                item["location_error"] = str(ex)
 
-        for cand in candidates:
-            item = dict(cand)
-            dest_lat = cand.get("latitude")
-            dest_lon = cand.get("longitude")
-
-            if dest_lat is not None and dest_lon is not None:
-                try:
-                    d_lat = float(dest_lat)
-                    d_lon = float(dest_lon)
-                    self.validate_coordinates(d_lat, d_lon, label=f"Candidate {cand.get('source_id')}")
-                    loc_info = self.calculate_distance(
-                        origin_lat=hosp_lat,
-                        origin_lon=hosp_lon,
-                        dest_lat=d_lat,
-                        dest_lon=d_lon,
-                        include_eta=True,
-                    )
-                    item["distance_km"] = loc_info["distance_km"]
-                    item["estimated_time"] = loc_info["estimated_time"]
-                except Exception as ex:
-                    item["distance_km"] = None
-                    item["estimated_time"] = None
-                    item["location_error"] = str(ex)
-            else:
-                item["distance_km"] = None
-                item["estimated_time"] = None
-
-            annotated_candidates.append(item)
+        # One routing call for all valid candidates (a single Matrix request for OpenRouteService).
+        if routable:
+            try:
+                routes = self.routing_provider.route_many(
+                    hosp_lat, hosp_lon, [(annotated_candidates[i]["latitude"], annotated_candidates[i]["longitude"]) for i in routable]
+                )
+                for index, route in zip(routable, routes):
+                    item = annotated_candidates[index]
+                    item["distance_km"] = route["distance_km"]
+                    item["estimated_time"] = route["estimated_time"]
+                    item["distance_source"] = route.get("source")
+            except Exception as ex:
+                for index in routable:
+                    annotated_candidates[index]["location_error"] = str(ex)
 
         # Sort annotated candidates by distance
         annotated_candidates.sort(
@@ -213,6 +212,20 @@ class LocationAgent:
         if include_eta:
             return route_info
         return {"distance_km": route_info["distance_km"]}
+
+    def calculate_distances_batch(
+        self,
+        origin_lat: float,
+        origin_lon: float,
+        destinations: list,
+    ) -> list:
+        """Distance and ETA from one origin to many (lat, lon) destinations in a single routing call."""
+        self.validate_coordinates(origin_lat, origin_lon, label="Origin")
+        points = []
+        for lat, lon in destinations:
+            self.validate_coordinates(float(lat), float(lon), label="Destination")
+            points.append((float(lat), float(lon)))
+        return self.routing_provider.route_many(origin_lat, origin_lon, points)
 
     def get_route(
         self,

@@ -84,7 +84,7 @@ def parse_elements(elements: list[dict[str, Any]], latitude: float, longitude: f
     return places
 
 
-def discover_nearby_blood_banks(
+def discover_via_overpass(
     latitude: float,
     longitude: float,
     radius_km: float = 25.0,
@@ -130,6 +130,26 @@ def discover_nearby_blood_banks(
     finally:
         if owns_client:
             http.close()
+
+
+def discover_nearby_blood_banks(latitude: float, longitude: float, radius_km: float = 25.0, limit: int = 20, **kwargs) -> dict[str, Any]:
+    """Find nearby facilities with the configured provider.
+
+    PLACES_PROVIDER: ``auto`` (default: Geoapify when GEOAPIFY_API_KEY is set, else Overpass; Overpass is
+    also tried if Geoapify fails), ``geoapify`` or ``overpass``.
+    """
+    from app.services import geoapify_discovery
+
+    provider = os.getenv("PLACES_PROVIDER", "auto").strip().lower()
+    if provider == "overpass" or (provider == "auto" and not geoapify_discovery.geoapify_key()):
+        return discover_via_overpass(latitude, longitude, radius_km, limit, **kwargs)
+    result = geoapify_discovery.discover_nearby_blood_banks(latitude, longitude, radius_km, limit)
+    if result["available"] or provider == "geoapify":
+        return result
+    fallback = discover_via_overpass(latitude, longitude, radius_km, limit, **kwargs)
+    if fallback["available"]:
+        return fallback
+    return {**result, "error": f"{result['error']}; Overpass also failed: {fallback.get('error')}"[:400]}
 
 
 def clear_cache() -> None:

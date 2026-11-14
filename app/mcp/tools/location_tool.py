@@ -75,3 +75,20 @@ def handle_calculate_distance(
     include_eta = arguments.get("include_eta", True)
 
     return agent.process(arguments, include_eta=include_eta)
+
+
+def handle_calculate_distances_batch(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Distance/ETA from one origin to many destinations with a single routing call."""
+    if not isinstance(arguments, dict):
+        raise ValueError("Tool arguments must be a dictionary.")
+    destinations = arguments.get("destinations")
+    if not isinstance(destinations, list) or not destinations:
+        raise ValueError("'destinations' must be a non-empty list of {latitude, longitude} objects.")
+    if len(destinations) > 200:
+        raise ValueError("At most 200 destinations per call.")
+    agent = LocationAgent()
+    routes = agent.calculate_distances_batch(
+        float(arguments["origin_latitude"]), float(arguments["origin_longitude"]),
+        [(item["latitude"], item["longitude"]) for item in destinations],
+    )
+    return {"results": routes}

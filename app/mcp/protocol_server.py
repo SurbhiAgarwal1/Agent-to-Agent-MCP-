@@ -9,7 +9,7 @@ from opentelemetry import trace
 from app.database.session import SessionLocal
 from app.mcp.tools.requirement_tool import handle_validate_blood_request
 from app.mcp.tools.matching_tool import handle_find_blood_sources
-from app.mcp.tools.location_tool import handle_calculate_distance
+from app.mcp.tools.location_tool import handle_calculate_distance, handle_calculate_distances_batch
 from app.mcp.tools.notification_tool import handle_dispatch_notifications
 from app.mcp.data_api_tools import register_data_api_tools
 from app.mcp.osm_tools import register_osm_tools
@@ -70,6 +70,12 @@ def find_blood_sources(
         "blood_group": blood_group, "component_type": component_type, "request_id": request_id,
         "inventories": inventories, "donors": donors,
     }))()
+
+
+@mcp.tool()
+def calculate_distances_batch(origin_latitude: float, origin_longitude: float, destinations: list[dict]) -> dict:
+    """Distance and ETA from one origin to many destinations ({latitude, longitude} each) in one routing call."""
+    return _domain_operation("calculate_distances_batch", lambda: handle_calculate_distances_batch({"origin_latitude": origin_latitude, "origin_longitude": origin_longitude, "destinations": destinations}))()
 
 
 @mcp.tool()

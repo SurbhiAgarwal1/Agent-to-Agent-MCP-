@@ -23,3 +23,19 @@ Hospital staff need a hospital membership before using `/nl-request` (see `/api/
 * In development the notification links are printed in the launcher output as `DEV response link ...`.
   Open one (or POST `{"response_status":"accepted","confirmed_available_units":2}` to it) to answer as that blood bank / donor.
 * Staff see the answer at `GET /api/v1/hospital-alerts` and `GET /api/v1/blood-requests/{id}/responses`.
+
+## Geoapify (places) and OpenRouteService (road distance / ETA)
+
+Create a `.env` file in the project root (it is git-ignored; never commit keys):
+
+```
+GEOAPIFY_API_KEY=your_geoapify_key
+ORS_API_KEY=your_openrouteservice_token
+```
+
+The launcher loads it automatically.
+
+* `GEOAPIFY_API_KEY` -> nearby facilities come from Geoapify (`PLACES_PROVIDER=auto|geoapify|overpass`). Geoapify has no
+  blood-bank category, so places named like a blood bank are listed first and hospitals (which often run a blood bank) after them.
+* `ORS_API_KEY` -> `ROUTING_PROVIDER=ors`: one OpenRouteService Matrix request returns road distance and travel time for all
+  candidates. If ORS fails (quota, key, network) the response falls back to straight-line estimates and says so.

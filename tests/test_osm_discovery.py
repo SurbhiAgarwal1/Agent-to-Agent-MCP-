@@ -22,7 +22,9 @@ OVERPASS_REPLY = {"elements": [
 
 
 @pytest.fixture(autouse=True)
-def _fresh_cache():
+def _fresh_cache(monkeypatch):
+    monkeypatch.delenv("GEOAPIFY_API_KEY", raising=False)
+    monkeypatch.delenv("PLACES_PROVIDER", raising=False)
     osm_discovery.clear_cache()
     yield
     osm_discovery.clear_cache()

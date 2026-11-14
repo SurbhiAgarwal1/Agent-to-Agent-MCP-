@@ -51,6 +51,23 @@ def wait_port(port: int, proc: subprocess.Popen, label: str, timeout: float = 60
     raise SystemExit(f"{label} did not open port {port} within {timeout:.0f}s")
 
 
+def load_dotenv(path: Path) -> list[str]:
+    """Load KEY=VALUE lines from .env into the environment without overriding variables already set."""
+    loaded: list[str] = []
+    if not path.exists():
+        return loaded
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip().removeprefix("export ").strip(), value.strip().strip("'\"")
+        if key and key not in os.environ and value:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-seed", action="store_true", help="skip seeding the synthetic data APIs")
@@ -75,11 +92,18 @@ def main() -> None:
             "or start on shifted ports:  python -m scripts.run_distributed --no-seed --port-offset 1000"
         )
 
+    loaded = load_dotenv(ROOT / ".env")
+    if loaded:
+        print(f"Loaded from .env: {', '.join(sorted(loaded))}")
     data_dir = ROOT / "data"
     data_dir.mkdir(exist_ok=True)
     env = os.environ.copy()
     env.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))
     env.setdefault("SERVICE_TO_SERVICE_TOKEN", secrets.token_urlsafe(48))
+    env.setdefault("A2A_TIMEOUT_SECONDS", "120")   # every agent call opens an MCP session; slow machines need headroom
+    env.setdefault("MCP_TIMEOUT_SECONDS", "60")
+    if env.get("ORS_API_KEY") and "ROUTING_PROVIDER" not in env:
+        env["ROUTING_PROVIDER"] = "ors"
     env.update({
         "ENVIRONMENT": env.get("ENVIRONMENT", "development"),
         "OBSERVABILITY_ENABLED": "false",
@@ -145,6 +169,8 @@ def main() -> None:
         start("backend", [*uvicorn, "app.main:app", "--port", str(BACKEND_PORT)], BACKEND_PORT, {"OTEL_SERVICE_NAME": "gateway"})
         with urllib.request.urlopen(f"http://127.0.0.1:{AGENTS['matching']}/.well-known/agent-card.json", timeout=5) as r:
             assert r.status == 200
+        print(f"Places provider: {'Geoapify' if env.get('GEOAPIFY_API_KEY') else 'OpenStreetMap Overpass (set GEOAPIFY_API_KEY for Geoapify)'}"
+              f" | Routing: {'OpenRouteService' if env.get('ROUTING_PROVIDER') == 'ors' else 'straight-line estimate (set ORS_API_KEY)'}")
         print(f"\nAll services running. API docs: http://127.0.0.1:{BACKEND_PORT}/docs   (Ctrl+C to stop)")
         while True:
             for label, proc in procs:

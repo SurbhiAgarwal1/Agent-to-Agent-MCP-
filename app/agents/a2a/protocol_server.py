@@ -264,26 +264,21 @@ class DomainAgentExecutor(AgentExecutor):
                     ordered = sorted(candidates, key=_rank)
                     to_locate = [c for c in ordered if c.get("latitude") is not None and c.get("longitude") is not None][:limit]
                     passthrough = [c for c in candidates if c.get("latitude") is None or c.get("longitude") is None]
-                    gate = asyncio.Semaphore(8)
-
-                    async def _locate(candidate):
-                        async with gate:
-                            distance = await call_remote_tool(
-                                "calculate_distance",
-                                {
-                                    "origin_latitude": origin["latitude"],
-                                    "origin_longitude": origin["longitude"],
-                                    "destination_latitude": candidate["latitude"],
-                                    "destination_longitude": candidate["longitude"],
-                                    "include_eta": True,
-                                },
-                            )
+                    routes = []
+                    if to_locate:
+                        batch = await call_remote_tool("calculate_distances_batch", {
+                            "origin_latitude": origin["latitude"], "origin_longitude": origin["longitude"],
+                            "destinations": [{"latitude": c["latitude"], "longitude": c["longitude"]} for c in to_locate],
+                        })
+                        routes = batch["results"]
+                    located = []
+                    for candidate, route in zip(to_locate, routes):
                         api_distance = nearby_distances.get((candidate.get("source_type"), candidate.get("source_id")))
-                        if api_distance is not None:
-                            distance["distance_km"] = api_distance
-                        return {**candidate, **distance}
-
-                    located = [*await asyncio.gather(*(_locate(c) for c in to_locate)), *passthrough]
+                        # Keep the data API's straight-line figure only when no real road routing answered.
+                        if api_distance is not None and route.get("source") != "OPENROUTESERVICE":
+                            route = {**route, "distance_km": api_distance}
+                        located.append({**candidate, **route})
+                    located.extend(passthrough)
                     result = {
                         "candidates": sorted(
                             located, key=lambda item: item.get("distance_km", float("inf"))
