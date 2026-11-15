@@ -84,9 +84,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const register = useCallback(
-    async (email, password, role = "HOSPITAL_STAFF", adminSignupKey = "") => {
+    async (email, password, role = "HOSPITAL_STAFF", adminSignupKey = "", extra = {}) => {
       setSessionExpiredMessage(null);
-      await registerApi(email, password, role, adminSignupKey);
+      await registerApi(email, password, role, adminSignupKey, extra);
       return login(email, password);
     },
     [login]

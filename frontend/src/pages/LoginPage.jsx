@@ -2,9 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import Button from '../components/common/Button';
+import { homeForRole } from '../utils/roles';
+
+const LOGIN_ROLES = [
+  ['HOSPITAL_STAFF', 'Hospital Staff', 'Request and coordinate blood.'],
+  ['USER', 'Blood Donor', 'See and answer blood alerts.'],
+  ['BLOOD_BANK_STAFF', 'Blood Bank', 'Manage stock and requests.'],
+  ['ADMIN', 'Administrator', 'Manage operations and system tools.'],
+];
+const ROLE_LABEL = Object.fromEntries(LOGIN_ROLES.map(([v, l]) => [v, l]));
 
 export default function LoginPage() {
-  const { login, logout, isAuthenticated } = useAuth();
+  const { login, logout, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -14,11 +23,11 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const from = location.state?.from?.pathname || '/dashboard';
+  const from = location.state?.from?.pathname || null;
 
   useEffect(() => {
-    if (isAuthenticated) navigate(from, { replace: true });
-  }, [isAuthenticated, navigate, from]);
+    if (isAuthenticated) navigate(from || homeForRole(user?.role), { replace: true });
+  }, [isAuthenticated, navigate, from, user]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -34,10 +43,10 @@ export default function LoginPage() {
       const actualRole = profile?.role?.toUpperCase();
       if (actualRole !== role) {
         logout();
-        setError(`This account is registered as ${actualRole === 'ADMIN' ? 'Administrator' : 'Hospital Staff'}. Choose the matching account type.`);
+        setError(`This account is registered as ${ROLE_LABEL[actualRole] || actualRole}. Choose the matching account type.`);
         return;
       }
-      navigate(from, { replace: true });
+      navigate(from || homeForRole(actualRole), { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
@@ -66,26 +75,12 @@ export default function LoginPage() {
             <fieldset className="form-group auth-role-fieldset">
               <legend className="form-label">Account Type</legend>
               <div className="auth-role-grid">
-                <label className={`auth-role-option ${role === 'HOSPITAL_STAFF' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="login-role"
-                    value="HOSPITAL_STAFF"
-                    checked={role === 'HOSPITAL_STAFF'}
-                    onChange={(e) => setRole(e.target.value)}
-                  />
-                  <span><strong>Hospital Staff</strong><small>Request and coordinate blood.</small></span>
-                </label>
-                <label className={`auth-role-option ${role === 'ADMIN' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="login-role"
-                    value="ADMIN"
-                    checked={role === 'ADMIN'}
-                    onChange={(e) => setRole(e.target.value)}
-                  />
-                  <span><strong>Administrator</strong><small>Manage operations and system tools.</small></span>
-                </label>
+                {LOGIN_ROLES.map(([value, label, hint]) => (
+                  <label key={value} className={`auth-role-option ${role === value ? 'selected' : ''}`}>
+                    <input type="radio" name="login-role" value={value} checked={role === value} onChange={(e) => setRole(e.target.value)} />
+                    <span><strong>{label}</strong><small>{hint}</small></span>
+                  </label>
+                ))}
               </div>
             </fieldset>
 

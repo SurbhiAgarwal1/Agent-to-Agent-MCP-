@@ -139,22 +139,34 @@ def _validate_bank_response_link(row, token):
     if problem=="invalid":raise HTTPException(403,"Invalid response token")
     if problem=="expired":raise HTTPException(410,"Response link has expired")
 
-def _record_bank_response(row, token, payload, db):
+def _take_stock(db, row, units):
+    """Remove accepted units from this bank's stock (never below zero). Returns units actually taken."""
+    inv=db.query(BloodInventory).filter_by(blood_bank_id=row.blood_bank_id,blood_group=row.inventory_blood_group,component_type=row.component_type).with_for_update().first()
+    if not inv or not units: return 0
+    taken=max(0,min(units,inv.available_units))
+    inv.available_units-=taken
+    if inv.reserved_units>inv.available_units: inv.reserved_units=inv.available_units
+    inv.availability_status="available" if inv.available_units>inv.reserved_units else "out_of_stock"
+    inv.last_updated=datetime.now(timezone.utc)
+    return taken
+
+def _record_bank_response(row, token, payload, db, trusted=False):
     from app.services.notification_providers.delivery import token_digest
-    _validate_bank_response_link(row,token)
+    if not trusted: _validate_bank_response_link(row,token)
     from app.services.notification_providers.delivery import respondable_delivery_statuses
     if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered to the recipient")
     if payload.response_status=="accepted" and not payload.confirmed_available_units:raise HTTPException(422,"Accepted response requires confirmed available units")
     if payload.response_status=="partially_available" and (payload.confirmed_available_units is None or not 0<payload.confirmed_available_units<row.required_units):raise HTTPException(422,"Partial response requires a positive quantity below the requested units")
     if payload.response_status in {"unavailable","rejected"} and not payload.rejection_reason:raise HTTPException(422,"Unavailable or rejected responses require a reason")
     now=datetime.now(timezone.utc)
-    changed=db.query(BloodBankNotification).filter(
-        BloodBankNotification.id==row.id,
-        BloodBankNotification.response_status=="pending",
-        BloodBankNotification.response_token_hash==token_digest(token),
-        BloodBankNotification.response_token_expires_at>now,
-        BloodBankNotification.delivery_status.in_(respondable_delivery_statuses()),
-    ).update({
+    if trusted and payload.response_status in {"accepted","partially_available"}:
+        inv=db.query(BloodInventory).filter_by(blood_bank_id=row.blood_bank_id,blood_group=row.inventory_blood_group,component_type=row.component_type).first()
+        have=inv.available_units if inv else 0
+        if payload.confirmed_available_units>have: raise HTTPException(422,f"Only {have} unit(s) in stock")
+    guards=[BloodBankNotification.id==row.id,BloodBankNotification.response_status=="pending",
+            BloodBankNotification.delivery_status.in_(respondable_delivery_statuses())]
+    if not trusted: guards+= [BloodBankNotification.response_token_hash==token_digest(token),BloodBankNotification.response_token_expires_at>now]
+    changed=db.query(BloodBankNotification).filter(*guards).update({
         BloodBankNotification.response_status:payload.response_status,
         BloodBankNotification.response_at:now,
         BloodBankNotification.confirmed_available_units:payload.confirmed_available_units,
@@ -164,7 +176,9 @@ def _record_bank_response(row, token, payload, db):
     },synchronize_session=False)
     if changed!=1:
         db.rollback()
-        raise HTTPException(409,"Response link is invalid or has already been used")
+        raise HTTPException(409,"This request has already been answered" if trusted else "Response link is invalid or has already been used")
+    if payload.response_status in {"accepted","partially_available"}:
+        _take_stock(db,row,payload.confirmed_available_units or 0)
     db.commit();db.refresh(row)
     from app.services.notification_providers.delivery import notify_hospital_of_response
     bank=db.get(BloodBank,row.blood_bank_id)
@@ -308,3 +322,65 @@ def patch_request(request_id:int,payload:BloodRequestPatch,db:Session=Depends(ge
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("blood_bank_api.main:app", host="0.0.0.0", port=int(__import__("os").getenv("BLOOD_BANK_API_PORT","8105")))
+
+
+# ---- internal (service-authenticated) endpoints used by the main app's portal ----
+from pydantic import BaseModel, Field
+from datetime import date as _date
+
+class BankCreate(BaseModel):
+    name:str=Field(min_length=2,max_length=150)
+    address:str=Field(min_length=2,max_length=255)
+    city:str=Field(default="Unknown",max_length=80); district:str=Field(default="Unknown",max_length=80)
+    state:str=Field(default="Unknown",max_length=80); pin_code:str=Field(default="000000",max_length=8)
+    latitude:float=Field(ge=-90,le=90); longitude:float=Field(ge=-180,le=180)
+    contact_number:str=Field(default="+91-00000-00000",max_length=32)
+    contact_email:str=Field(default="bank@example.invalid",max_length=140)
+    initial_stock:dict[str,int]=Field(default_factory=dict)
+
+_GROUPS=["A+","A-","B+","B-","AB+","AB-","O+","O-"]
+
+@app.post("/api/v1/blood-banks",status_code=201,response_model=BankResponse)
+def create_blood_bank(payload:BankCreate,authorization:Optional[str]=Header(default=None),db:Session=Depends(get_db)):
+    from app.security.service_auth import require_service_token
+    require_service_token(authorization)
+    for g,u in payload.initial_stock.items():
+        if g not in _GROUPS or u<0 or u>10000: raise HTTPException(422,f"Invalid initial stock for {g}")
+    import secrets as _s
+    d=payload.model_dump(exclude={"initial_stock"})
+    bank=BloodBank(**d,registration_number="REG-"+_s.token_hex(5).upper(),operating_hours="24x7",emergency_available=True,verification_status="verified",bank_type="private")
+    db.add(bank);db.flush()
+    expiry=_date.today()+timedelta(days=35)
+    for g in _GROUPS:
+        u=payload.initial_stock.get(g,0)
+        db.add(BloodInventory(blood_bank_id=bank.id,blood_group=g,component_type="packed_red_blood_cells",available_units=u,reserved_units=0,expiry_date=expiry,availability_status="available" if u>0 else "out_of_stock"))
+    db.commit();db.refresh(bank);return _bank(bank)
+
+class StockSet(BaseModel):
+    available_units:int=Field(ge=0,le=10000)
+    expiry_date:Optional[_date]=None
+
+@app.put("/api/v1/blood-banks/{blood_bank_id}/stock/{blood_group}",response_model=InventoryResponse)
+def set_stock(blood_bank_id:int,blood_group:str,payload:StockSet,authorization:Optional[str]=Header(default=None),db:Session=Depends(get_db)):
+    from app.security.service_auth import require_service_token
+    require_service_token(authorization)
+    g=blood_group.upper()
+    if g not in _GROUPS: raise HTTPException(422,"Unsupported blood group")
+    if not db.get(BloodBank,blood_bank_id): raise HTTPException(404,"Blood bank not found")
+    row=db.query(BloodInventory).filter_by(blood_bank_id=blood_bank_id,blood_group=g,component_type="packed_red_blood_cells").first()
+    if not row:
+        row=BloodInventory(blood_bank_id=blood_bank_id,blood_group=g,component_type="packed_red_blood_cells",available_units=0,reserved_units=0,expiry_date=_date.today()+timedelta(days=35),availability_status="out_of_stock");db.add(row)
+    row.available_units=payload.available_units
+    if row.reserved_units>row.available_units: row.reserved_units=row.available_units
+    if payload.expiry_date: row.expiry_date=payload.expiry_date
+    row.availability_status="available" if row.available_units>row.reserved_units else "out_of_stock"
+    row.last_updated=datetime.now(timezone.utc);db.commit();db.refresh(row);return _inventory(row)
+
+@app.post("/api/v1/blood-bank-notifications/{notification_id}/answer",response_model=BankNotificationRecord)
+def answer_blood_bank_notification(notification_id:int,payload:BankNotificationResponseInput,blood_bank_id:int=Query(...),authorization:Optional[str]=Header(default=None),db:Session=Depends(get_db)):
+    """Answer on behalf of the signed-in bank staff (the main app verified who they are). No link token."""
+    from app.security.service_auth import require_service_token
+    require_service_token(authorization)
+    row=db.get(BloodBankNotification,notification_id)
+    if not row or row.blood_bank_id!=blood_bank_id: raise HTTPException(404,"Notification not found")
+    return _record_bank_response(row,None,payload,db,trusted=True)

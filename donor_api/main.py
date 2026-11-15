@@ -43,19 +43,15 @@ def _validate_donor_response_link(row, token):
     if problem=="invalid":raise HTTPException(403,"Invalid response token")
     if problem=="expired":raise HTTPException(410,"Response link has expired")
 
-def _record_donor_response(row, token, response, db):
+def _record_donor_response(row, token, response, db, trusted=False):
     from app.services.notification_providers.delivery import token_digest
-    _validate_donor_response_link(row,token)
+    if not trusted: _validate_donor_response_link(row,token)
     from app.services.notification_providers.delivery import respondable_delivery_statuses
     if row.delivery_status not in respondable_delivery_statuses():raise HTTPException(409,"This notification was not delivered")
     now=datetime.now(timezone.utc)
-    changed=db.query(DonorNotification).filter(
-        DonorNotification.id==row.id,
-        DonorNotification.response_status=="pending",
-        DonorNotification.response_token_hash==token_digest(token),
-        DonorNotification.response_token_expires_at>now,
-        DonorNotification.delivery_status.in_(respondable_delivery_statuses()),
-    ).update({
+    guards=[DonorNotification.id==row.id,DonorNotification.response_status=="pending",DonorNotification.delivery_status.in_(respondable_delivery_statuses())]
+    if not trusted: guards+=[DonorNotification.response_token_hash==token_digest(token),DonorNotification.response_token_expires_at>now]
+    changed=db.query(DonorNotification).filter(*guards).update({
         DonorNotification.response_status:response,
         DonorNotification.response_at:now,
         DonorNotification.response:{"accepted":"confirmed","declined":"declined","unavailable":"unavailable","no_response":"no_response"}[response],
@@ -292,3 +288,13 @@ async def donor_twilio_status(notification_id:int,request:Request,db:Session=Dep
 if __name__=="__main__":
     import os,uvicorn
     uvicorn.run("donor_api.main:app",host="0.0.0.0",port=int(os.getenv("DONOR_API_PORT","8106")))
+
+
+@app.post("/api/v1/donor-notifications/{notification_id}/answer",response_model=NotificationResponse)
+def answer_donor_notification(notification_id:int,response:str=Query(pattern="^(accepted|declined)$"),donor_id:int=Query(...),authorization:Optional[str]=Header(default=None),db:Session=Depends(get_db)):
+    """Answer on behalf of the signed-in donor (the main app verified who they are). No link token."""
+    from app.security.service_auth import require_service_token
+    require_service_token(authorization)
+    row=db.get(DonorNotification,notification_id)
+    if not row or row.donor_id!=donor_id:raise HTTPException(404,"Notification not found")
+    return _record_donor_response(row,None,response,db,trusted=True)

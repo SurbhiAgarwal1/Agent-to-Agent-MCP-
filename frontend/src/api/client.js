@@ -116,5 +116,11 @@ export const apiClient = {
       body: body ? JSON.stringify(body) : undefined,
       headers,
     }),
+  put: (endpoint, body, headers) =>
+    apiRequest(endpoint, {
+      method: "PUT",
+      body: body ? JSON.stringify(body) : undefined,
+      headers,
+    }),
   delete: (endpoint, headers) => apiRequest(endpoint, { method: "DELETE", headers }),
 };

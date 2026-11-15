@@ -10,6 +10,20 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=6, description="Password with min 6 characters")
     role: Optional[str] = Field(default="HOSPITAL_STAFF", description="Role: HOSPITAL_STAFF or ADMIN for self-registration")
     admin_signup_key: Optional[str] = Field(default=None, description="Required only when self-registering an ADMIN account")
+    # Role-specific profile (donor / blood bank / hospital)
+    name: Optional[str] = Field(default=None, max_length=120)
+    age: Optional[int] = Field(default=None, ge=18, le=65)
+    blood_group: Optional[str] = Field(default=None, max_length=3)
+    city: Optional[str] = Field(default=None, max_length=80)
+    district: Optional[str] = Field(default=None, max_length=80)
+    state: Optional[str] = Field(default=None, max_length=80)
+    pin_code: Optional[str] = Field(default=None, max_length=8)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    organization_name: Optional[str] = Field(default=None, max_length=150)
+    address: Optional[str] = Field(default=None, max_length=255)
+    contact_number: Optional[str] = Field(default=None, max_length=32)
+    initial_stock: Optional[dict[str, int]] = None
 
 
 class UserCreate(BaseModel):

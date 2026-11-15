@@ -42,3 +42,16 @@ def service_auth_headers() -> dict[str, str]:
         return {"Authorization": f"Bearer {token}"}
     return {}
 
+
+
+def require_service_token(authorization=None) -> None:
+    """FastAPI-style guard for internal-only endpoints (raises HTTPException)."""
+    from fastapi import HTTPException
+
+    expected = os.getenv("SERVICE_TO_SERVICE_TOKEN", "").strip()
+    if not expected:
+        if os.getenv("ENVIRONMENT", "development").lower() == "production":
+            raise HTTPException(503, "Service authentication is not configured.")
+        return  # local development only
+    if not authorization or not hmac.compare_digest(authorization, f"Bearer {expected}"):
+        raise HTTPException(401, "Internal service authentication required.")

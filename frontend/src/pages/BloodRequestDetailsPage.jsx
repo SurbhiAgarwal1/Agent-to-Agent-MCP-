@@ -17,6 +17,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import StatusBadge from '../components/common/StatusBadge';
 import UrgencyBadge from '../components/common/UrgencyBadge';
 import BloodGroupBadge from '../components/common/BloodGroupBadge';
+import ResponsesPanel from '../components/coordination/ResponsesPanel';
 import CoordinationWorkflow from '../components/coordination/CoordinationWorkflow';
 import MatchesList from '../components/matching/MatchesList';
 import useAuth from '../hooks/useAuth';
@@ -561,6 +562,10 @@ export default function BloodRequestDetailsPage() {
             <UrgencyBadge urgency={request.urgency} />
           </div>
         </Card>
+      </div>
+
+      <div style={{ marginBottom: '1.5rem' }}>
+        <ResponsesPanel requestId={requestId} />
       </div>
 
       {/* Request Progress Tracker */}

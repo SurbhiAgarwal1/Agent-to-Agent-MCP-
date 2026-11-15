@@ -4,6 +4,7 @@ import { listAuditLogs } from '../api/admin';
 import Card from '../components/common/Card';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import EmptyState from '../components/common/EmptyState';
+import HospitalAlertsPanel from '../components/coordination/HospitalAlertsPanel';
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -57,6 +58,10 @@ export default function NotificationsPage() {
         <strong>Protocol Dispatch Architecture:</strong> In this A2A system, notifications are autonomously dispatched
         by the <code>NotificationAgent</code> to hospitals, candidate blood banks, and donors upon fulfillment plan resolution.
       </div>
+
+      {(user?.role === 'HOSPITAL_STAFF' || isAdmin) && (
+        <div style={{ marginBottom: '1.5rem' }}><HospitalAlertsPanel /></div>
+      )}
 
       {isAdmin ? (
         <Card title="Recent Notification & Lifecycle Events">

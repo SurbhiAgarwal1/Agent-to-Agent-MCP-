@@ -199,7 +199,7 @@ def test_registration_default_role(client):
 
 
 def test_registration_rejects_admin_without_setup_key_or_bloodbank(client):
-    """Verify ADMIN self-registration is blocked unless a setup key is configured."""
+    """ADMIN self-registration needs the setup key; blood bank signup is public but needs a bank profile."""
     resp_admin = client.post(
         "/api/v1/auth/register",
         json={"email": "fakeadmin@hospital.org", "password": "Passw0rd!123", "role": "ADMIN"},
@@ -210,7 +210,7 @@ def test_registration_rejects_admin_without_setup_key_or_bloodbank(client):
         "/api/v1/auth/register",
         json={"email": "fakebb@hospital.org", "password": "Passw0rd!123", "role": "BLOOD_BANK_STAFF"},
     )
-    assert resp_bb.status_code == 403
+    assert resp_bb.status_code == 422  # public now, but must describe the bank (name + location)
 
 
 def test_registration_allows_admin_with_setup_key(client, monkeypatch):

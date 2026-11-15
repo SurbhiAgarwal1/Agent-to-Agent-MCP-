@@ -73,13 +73,27 @@ export function Sidebar({ isOpen, onClose }) {
               Operations
             </p>
 
-            <NavLink to="/dashboard" style={navLinkStyle} onClick={onClose} end>
-              <span>📊</span><span>Dashboard</span>
-            </NavLink>
+            {role === "USER" && (
+              <NavLink to="/donor" style={navLinkStyle} onClick={onClose} end>
+                <span>🩸</span><span>My Blood Alerts</span>
+              </NavLink>
+            )}
+            {role === "BLOOD_BANK_STAFF" && (
+              <NavLink to="/bank" style={navLinkStyle} onClick={onClose} end>
+                <span>🏦</span><span>Inventory & Requests</span>
+              </NavLink>
+            )}
+            {(isHospitalStaff) && (
+              <NavLink to="/dashboard" style={navLinkStyle} onClick={onClose} end>
+                <span>📊</span><span>Dashboard</span>
+              </NavLink>
+            )}
 
-            <NavLink to="/pharmacy" style={navLinkStyle} onClick={onClose}>
-              <span>💊</span><span>Pharmacy & Medicine</span>
-            </NavLink>
+            {isHospitalStaff && (
+              <NavLink to="/pharmacy" style={navLinkStyle} onClick={onClose}>
+                <span>💊</span><span>Pharmacy & Medicine</span>
+              </NavLink>
+            )}
 
             {isHospitalStaff && (
               <>

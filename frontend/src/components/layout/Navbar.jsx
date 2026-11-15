@@ -44,7 +44,7 @@ export function Navbar({ onToggleSidebar, isSidebarOpen = false }) {
           </button>
         )}
         <Link
-          to="/dashboard"
+          to={user?.role === "USER" ? "/donor" : user?.role === "BLOOD_BANK_STAFF" ? "/bank" : "/dashboard"}
           style={{
             display: "flex",
             alignItems: "center",

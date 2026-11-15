@@ -29,11 +29,46 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin registration requires the configured admin setup key.",
             )
-    elif requested_role != UserRole.HOSPITAL_STAFF:
+    elif requested_role not in (UserRole.HOSPITAL_STAFF, UserRole.USER, UserRole.BLOOD_BANK_STAFF):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Public registration can only create HOSPITAL_STAFF or ADMIN accounts.",
+            detail="Public registration can create HOSPITAL_STAFF, USER (donor), BLOOD_BANK_STAFF or ADMIN accounts.",
         )
+
+    # Validate the role's profile and make sure the email is free BEFORE creating anything in the data services.
+    if db.query(User).filter(User.email == payload.email.strip()).first():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="An account with this email already exists.")
+    from app.models.party_link import PartyLink
+    from app.services import party_service
+    link = None
+    if requested_role == UserRole.USER:
+        group = (payload.blood_group or "").strip().upper()
+        if group not in party_service.GROUPS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Donors must choose a blood group (A+, A-, B+, B-, AB+, AB-, O+, O-).")
+        if payload.latitude is None or payload.longitude is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Donors must share their location (latitude and longitude).")
+        donor_id = party_service.create_donor(
+            name=(payload.name or payload.email.split("@")[0])[:120], age=payload.age or 25, blood_group=group,
+            city=payload.city or "Unknown", district=payload.district or payload.city or "Unknown",
+            state=payload.state or "Unknown", pin_code=payload.pin_code or "000000",
+            latitude=payload.latitude, longitude=payload.longitude)
+        link = ("donor", donor_id)
+    elif requested_role == UserRole.BLOOD_BANK_STAFF:
+        if not (payload.organization_name or "").strip():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Enter the name of your blood bank.")
+        if payload.latitude is None or payload.longitude is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Share the blood bank's location (latitude and longitude).")
+        stock = {k.upper(): int(v) for k, v in (payload.initial_stock or {}).items() if int(v) > 0}
+        bad = [k for k in stock if k not in party_service.GROUPS]
+        if bad:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Unknown blood group in stock: {bad[0]}")
+        bank_id = party_service.create_bank(
+            name=payload.organization_name.strip(), address=(payload.address or payload.city or "Not provided").strip(),
+            city=payload.city or "Unknown", district=payload.district or payload.city or "Unknown",
+            state=payload.state or "Unknown", pin_code=payload.pin_code or "000000", latitude=payload.latitude,
+            longitude=payload.longitude, contact_number=payload.contact_number,
+            contact_email=payload.email.strip(), initial_stock=stock)
+        link = ("blood_bank", bank_id)
 
     try:
         user = create_user(
@@ -42,6 +77,17 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
             password=payload.password,
             role=requested_role,
         )
+        if link:
+            db.add(PartyLink(user_id=user.id, kind=link[0], external_id=link[1]))
+            db.commit()
+        elif requested_role == UserRole.HOSPITAL_STAFF and (payload.organization_name or "").strip():
+            hospital = Hospital(name=payload.organization_name.strip(), address=(payload.address or "Not provided").strip(),
+                                latitude=payload.latitude if payload.latitude is not None else 0.0,
+                                longitude=payload.longitude if payload.longitude is not None else 0.0)
+            db.add(hospital)
+            db.flush()
+            db.add(HospitalMembership(user_id=user.id, hospital_id=hospital.hospital_id, membership_type="STAFF", is_active=True))
+            db.commit()
         return user
     except ValueError as exc:
         raise HTTPException(

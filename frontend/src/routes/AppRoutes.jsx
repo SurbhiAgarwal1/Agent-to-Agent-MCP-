@@ -1,5 +1,9 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import useAuth from '../hooks/useAuth';
+import { homeForRole } from '../utils/roles';
+import DonorDashboardPage from '../pages/DonorDashboardPage.jsx';
+import BloodBankDashboardPage from '../pages/BloodBankDashboardPage.jsx';
 
 import ProtectedRoute from './ProtectedRoute.jsx';
 import RoleRoute from './RoleRoute.jsx';
@@ -20,6 +24,12 @@ import AuditLogsPage from '../pages/AuditLogsPage.jsx';
 import MembershipManagementPage from '../pages/MembershipManagementPage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
 
+function DashboardGate() {
+  const { user } = useAuth();
+  const home = homeForRole(user?.role);
+  return home === '/dashboard' ? <DashboardPage /> : <Navigate to={home} replace />;
+}
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -36,7 +46,9 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<DashboardGate />} />
+        <Route path="/donor" element={<RoleRoute allowedRoles={['USER']}><DonorDashboardPage /></RoleRoute>} />
+        <Route path="/bank" element={<RoleRoute allowedRoles={['BLOOD_BANK_STAFF']}><BloodBankDashboardPage /></RoleRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/pharmacy" element={<PharmacyCatalogPage />} />

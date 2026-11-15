@@ -19,6 +19,7 @@ from app.models.membership import HospitalMembership, BloodBankMembership
 from app.models.communication import CommunicationSession, CommunicationMessage
 from app.models.calling import CallSession
 from app.models.hospital_alert import HospitalAlert
+from app.models.party_link import PartyLink
 from app.models.pharmacy import (
     Pharmacy,
     Medicine,
