@@ -62,12 +62,18 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
         bad = [k for k in stock if k not in party_service.GROUPS]
         if bad:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Unknown blood group in stock: {bad[0]}")
-        bank_id = party_service.create_bank(
-            name=payload.organization_name.strip(), address=(payload.address or payload.city or "Not provided").strip(),
-            city=payload.city or "Unknown", district=payload.district or payload.city or "Unknown",
-            state=payload.state or "Unknown", pin_code=payload.pin_code or "000000", latitude=payload.latitude,
-            longitude=payload.longitude, contact_number=payload.contact_number,
-            contact_email=payload.email.strip(), initial_stock=stock)
+        existing = party_service.find_bank_by_name(payload.organization_name)
+        if existing is not None:
+            if db.query(PartyLink).filter(PartyLink.kind == "blood_bank", PartyLink.external_id == existing).first():
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="This blood bank already has a staff account. Ask its staff to log in, or use a different name.")
+            bank_id = existing  # claim the listed blood bank (its stock and incoming requests) instead of duplicating it
+        else:
+            bank_id = party_service.create_bank(
+                name=payload.organization_name.strip(), address=(payload.address or payload.city or "Not provided").strip(),
+                city=payload.city or "Unknown", district=payload.district or payload.city or "Unknown",
+                state=payload.state or "Unknown", pin_code=payload.pin_code or "000000", latitude=payload.latitude,
+                longitude=payload.longitude, contact_number=payload.contact_number,
+                contact_email=payload.email.strip(), initial_stock=stock)
         link = ("blood_bank", bank_id)
 
     try:

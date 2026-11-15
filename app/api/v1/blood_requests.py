@@ -187,6 +187,14 @@ def update_blood_request_status(
     return blood_request
 
 
+def _named(matches):
+    from app.services.order_status import enrich_matches
+    try:
+        return enrich_matches(matches)
+    except Exception:  # names are cosmetic; never fail the preview over them
+        return matches
+
+
 @router.get(
     "/{request_id}/matches",
     summary="Run multi-agent matching pipeline for a blood request",
@@ -253,7 +261,7 @@ def get_request_matches(
             "hospital": hospital_data,
             "requirement_validation": {"valid": True, "blood_group": blood_request.blood_group, "units_required": blood_request.units_required},
             "matches_count": len(matches),
-            "matches": matches,
+            "matches": _named(matches),
         }
 
     result = invoke_coordinator_from_gateway(db, request_id=request_id, persist=False, mode="coordinate")
@@ -270,7 +278,7 @@ def get_request_matches(
         "hospital": result.get("hospital") or hospital_data,
         "requirement_validation": result.get("requirement"),
         "matches_count": len(matches),
-        "matches": matches,
+        "matches": _named(matches),
     }
 
 

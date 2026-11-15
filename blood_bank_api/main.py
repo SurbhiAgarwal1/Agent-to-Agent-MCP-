@@ -51,8 +51,9 @@ def _request(r):
 def health(): return {"status": "healthy", "api": "blood_bank"}
 
 @app.get("/api/v1/blood-banks",response_model=Page[BankResponse])
-def list_blood_banks(city: Optional[str] = None, district: Optional[str] = None, state: Optional[str] = None, blood_group: Optional[str] = None, verification_status: Optional[str] = None, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), db: Session = Depends(get_db)):
+def list_blood_banks(city: Optional[str] = None, district: Optional[str] = None, state: Optional[str] = None, blood_group: Optional[str] = None, verification_status: Optional[str] = None, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), db: Session = Depends(get_db), name: Optional[str] = None):
     q = db.query(BloodBank)
+    if name: q = q.filter(func.lower(BloodBank.name) == name.strip().lower())
     if city: q = q.filter(func.lower(BloodBank.city) == city.lower())
     if district: q = q.filter(func.lower(BloodBank.district) == district.lower())
     if state: q = q.filter(func.lower(BloodBank.state) == state.lower())

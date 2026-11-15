@@ -193,3 +193,38 @@ def test_order_status_shows_names_and_delivery_estimate(client, world, db_sessio
     assert done["stage"] == "confirmed" and done["units_confirmed"] == 2 and done["eta_minutes"] >= 1
     assert "Order Hospital" in done["headline"] and done["expected_arrival_at"]
     assert client.get(f"/api/v1/blood-requests/{rid}/responses", headers=staff).json()["responses"][0]["source_name"] == "Order Blood Bank"
+
+
+def test_bank_signup_claims_listed_bank_by_name_and_rejects_second_claim(client, world):
+    bank_api, _ = world
+    listed = bank_api.get("/api/v1/blood-banks?limit=1").json()["items"][0]
+    before = bank_api.get("/api/v1/blood-banks?limit=1").json()["total"]
+    h = _signup(client, email="claim@bank.test", password="secret12", role="BLOOD_BANK_STAFF", organization_name=listed["name"].upper(), latitude=1, longitude=1)
+    assert client.get("/api/v1/portal/bank/inventory", headers=h).json()["bank"]["id"] == listed["id"]
+    assert bank_api.get("/api/v1/blood-banks?limit=1").json()["total"] == before  # no duplicate listing
+    r = client.post("/api/v1/auth/register", json={"email": "second@bank.test", "password": "secret12", "role": "BLOOD_BANK_STAFF",
+                                                   "organization_name": listed["name"], "latitude": 1, "longitude": 1})
+    assert r.status_code == 409
+
+
+def test_alert_donors_then_donor_accepts_then_hospital_confirms_delivery(client, world, db_session):
+    staff = _signup(client, email="alert@hosp.test", password="secret12", role="HOSPITAL_STAFF", organization_name="Alert Hospital", address="1 Rd", latitude=12.97, longitude=77.59)
+    hospital = db_session.query(Hospital).filter(Hospital.name == "Alert Hospital").one()
+    request = BloodRequest(hospital_id=hospital.hospital_id, blood_group="B+", units_required=1, urgency="HIGH", status="PROCESSING")
+    db_session.add(request); db_session.commit()
+    rid = request.request_id
+    donor = _signup(client, email="dn@donor.test", password="secret12", role="USER", name="Dev Nair", age=28, blood_group="O+", city="Bengaluru", latitude=12.96, longitude=77.6)
+    assert client.get("/api/v1/portal/donor/notifications", headers=donor).json()["items"] == []
+    assert client.post(f"/api/v1/blood-requests/{rid}/confirm-delivery", headers=staff).status_code == 409  # not placed
+
+    from datetime import datetime, timezone
+    request.order_placed_at = datetime.now(timezone.utc); db_session.commit()
+    sent = client.post(f"/api/v1/blood-requests/{rid}/alert-donors", headers=staff)
+    assert sent.status_code == 200 and sent.json()["notified"] >= 1, sent.text   # O+ donor is compatible with B+
+    items = client.get("/api/v1/portal/donor/notifications", headers=donor).json()["items"]
+    assert items and items[0]["hospital_name"] == "Alert Hospital"
+    assert client.post(f"/api/v1/blood-requests/{rid}/confirm-delivery", headers=staff).status_code == 409  # nobody confirmed yet
+    assert client.post(f"/api/v1/portal/donor/notifications/{items[0]['id']}/respond", headers=donor, json={"response": "accepted"}).status_code == 200
+    done = client.post(f"/api/v1/blood-requests/{rid}/confirm-delivery", headers=staff)
+    assert done.status_code == 200 and done.json()["stage"] == "delivered"
+    assert db_session.query(BloodRequest).filter(BloodRequest.request_id == rid).one().status == "FULFILLED"

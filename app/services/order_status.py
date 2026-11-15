@@ -43,6 +43,20 @@ def source_profile(source_type: str, source_id: int, cache: dict) -> dict:
     return cache[key]
 
 
+def enrich_matches(matches: list[dict]) -> list[dict]:
+    """Replace placeholder source names ('DONOR #660') with the real data-service names (in place)."""
+    cache: dict = {}
+    for m in matches:
+        st, sid = m.get("source_type"), m.get("source_id")
+        if not st or sid is None:
+            continue
+        profile = source_profile(str(st).upper(), int(sid), cache)
+        if profile.get("name"):
+            m["name"] = profile["name"]
+            m["source_name"] = profile["name"]
+    return matches
+
+
 def name_sources(rows: list[dict]) -> None:
     """Put the real name on each response row (in place)."""
     cache: dict = {}
@@ -84,6 +98,8 @@ def build_order(db: Session, request: BloodRequest, summary: dict[str, Any]) -> 
     hosp_name = hospital.name if hospital else f"Hospital #{request.hospital_id}"
     if request.status == "CANCELLED":
         stage, headline = "cancelled", "This request was cancelled."
+    elif request.status == "FULFILLED" and request.order_placed_at is not None:
+        stage, headline = "delivered", f"Delivered: {got} unit(s) of {request.blood_group} received at {hosp_name}."
     elif request.order_placed_at is None:
         stage, headline = "not_placed", "Order not placed yet. Press Confirm Booking / Place Order to book the blood."
     elif got >= required:

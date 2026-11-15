@@ -87,6 +87,68 @@ def request_order(request_id: int, db: Session = Depends(get_db), user: User = D
     return order_status.build_order(db, request, summary)
 
 
+def _own_request(db: Session, user: User, request_id: int) -> BloodRequest:
+    request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
+    if request is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Blood request not found.")
+    if user.role != UserRole.ADMIN and not has_hospital_membership(db, user.id, request.hospital_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Hospital membership is required.")
+    return request
+
+
+@router.post("/blood-requests/{request_id}/alert-donors", tags=["Blood Requests"])
+def alert_nearby_donors(request_id: int, radius_km: float = Query(30, gt=0, le=200), limit: int = Query(10, ge=1, le=50),
+                        db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
+    """Send this request to the nearest eligible donors with a compatible blood group (they answer in their own dashboard)."""
+    from app.models.hospital import Hospital
+    from app.services import party_service as ps
+    from app.services.compatibility import get_compatible_donor_groups
+    request = _own_request(db, user, request_id)
+    hospital = db.get(Hospital, request.hospital_id)
+    if hospital is None or hospital.latitude is None or hospital.longitude is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The hospital has no location, so nearby donors cannot be found.")
+    found: dict[int, dict] = {}
+    for group in get_compatible_donor_groups(request.blood_group):
+        data = ps.call("GET", ps.donor_url() + "/api/v1/donors/nearby", params={
+            "latitude": hospital.latitude, "longitude": hospital.longitude, "radius_km": radius_km,
+            "blood_group": group, "available": True, "limit": limit})
+        for d in data.get("items", []):
+            found.setdefault(int(d["id"]), d)
+    ranked = sorted(found.values(), key=lambda d: d.get("distance_km") or 0)[:limit]
+    sent = 0
+    for d in ranked:
+        try:
+            ps.call("POST", ps.donor_url() + "/api/v1/donor-notifications/send", json={
+                "donor_id": int(d["id"]), "channel": "console", "blood_request_id": request.request_id,
+                "blood_group": request.blood_group,
+                "message": f"{hospital.name} urgently needs {request.units_required} unit(s) of {request.blood_group}. Open your dashboard to accept or decline.",
+                "idempotency_key": f"alert-{request.request_id}-{d['id']}",
+                "hospital_latitude": hospital.latitude, "hospital_longitude": hospital.longitude,
+                "max_distance_km": max(radius_km, 1)})
+            sent += 1
+        except HTTPException:
+            continue
+    return {"request_id": request_id, "donors_found": len(ranked), "notified": sent,
+            "message": f"Alerted {sent} nearby donor(s)." if sent else "No eligible donors were found nearby."}
+
+
+@router.post("/blood-requests/{request_id}/confirm-delivery", tags=["Blood Requests"])
+def confirm_delivery(request_id: int, db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
+    """The hospital confirms the confirmed blood has arrived; the request is closed as fulfilled."""
+    request = _own_request(db, user, request_id)
+    summary = response_sync.summarize(db, request, response_sync.fetch_notifications(request_id))
+    if request.order_placed_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The order has not been placed yet.")
+    if not summary.get("confirmed_units"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "No blood bank or donor has confirmed yet, so there is nothing to receive.")
+    request.status = "FULFILLED"
+    db.commit()
+    from app.services.audit import record_audit_log
+    record_audit_log(db=db, action="CONFIRM_DELIVERY", resource="blood_request", resource_id=request.request_id,
+                     user_id=user.id, details={"units_confirmed": summary.get("confirmed_units")})
+    return order_status.build_order(db, request, summary)
+
+
 @router.get("/hospital-alerts", tags=["Hospital Alerts"])
 def list_alerts(unread_only: bool = False, limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db),
                 user: User = Depends(require_role(STAFF))):

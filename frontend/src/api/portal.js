@@ -26,3 +26,8 @@ export const getRequestResponses = (requestId) =>
 export function getRequestOrder(requestId) {
   return apiClient.get(`/api/v1/blood-requests/${requestId}/order`);
 }
+
+export const alertNearbyDonors = (requestId) =>
+  apiClient.post(`/api/v1/blood-requests/${requestId}/alert-donors`);
+export const confirmDelivery = (requestId) =>
+  apiClient.post(`/api/v1/blood-requests/${requestId}/confirm-delivery`);

@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Card from '../common/Card';
 import usePolling from '../../hooks/usePolling';
-import { getRequestOrder } from '../../api/portal';
+import Button from '../common/Button';
+import { getRequestOrder, alertNearbyDonors, confirmDelivery } from '../../api/portal';
 
 const TONE = {
+  delivered: { bg: '#ecfdf5', border: '#22c55e', fg: '#14532d', icon: '✓✓' },
   confirmed: { bg: '#ecfdf5', border: '#86efac', fg: '#166534', icon: '✓' },
   partial: { bg: '#fffbeb', border: '#fcd34d', fg: '#92400e', icon: '…' },
   waiting: { bg: '#eff6ff', border: '#93c5fd', fg: '#1e40af', icon: '…' },
@@ -21,7 +23,19 @@ function clock(iso) {
 }
 
 export default function OrderStatusPanel({ requestId }) {
-  const { data, error } = usePolling(() => getRequestOrder(requestId), 5000, [requestId]);
+  const { data, error, refresh: reload } = usePolling(() => getRequestOrder(requestId), 5000, [requestId]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const act = async (fn, fallback) => {
+    setBusy(true); setNote('');
+    try {
+      const res = await fn(requestId);
+      setNote(res?.message || fallback);
+      if (reload) reload();
+    } catch (e) {
+      setNote(e?.message || 'That did not work. Please try again.');
+    } finally { setBusy(false); }
+  };
   if (error && !data) return null;
   if (!data) return null;
   const tone = TONE[data.stage] || TONE.not_placed;
@@ -60,6 +74,17 @@ export default function OrderStatusPanel({ requestId }) {
           </tbody>
         </table>
       )}
+      {data.placed && !['delivered', 'cancelled'].includes(data.stage) && (
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '0.75rem 0' }}>
+          {data.stage !== 'confirmed' && (
+            <Button variant="secondary" disabled={busy} onClick={() => act(alertNearbyDonors, 'Donors alerted.')}>Alert nearby donors</Button>
+          )}
+          {data.units_confirmed > 0 && (
+            <Button disabled={busy} onClick={() => act(confirmDelivery, 'Delivery confirmed.')}>Confirm delivery received</Button>
+          )}
+        </div>
+      )}
+      {note && <p role="status" style={{ fontWeight: 600 }}>{note}</p>}
       {data.placed && <small className="text-secondary">{data.eta_note}</small>}
     </Card>
   );
