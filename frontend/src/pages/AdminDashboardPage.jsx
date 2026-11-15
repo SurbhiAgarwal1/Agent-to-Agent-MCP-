@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { getRequestSummary } from '../api/admin';
 import Card from '../components/common/Card';
 
 const DEFAULT_AGENTS = [
@@ -106,16 +107,33 @@ const DEFAULT_TELEMETRY = {
 
 
 export default function AdminDashboardPage() {
-  const grafanaUrl = import.meta.env.VITE_GRAFANA_URL;
-  const jaegerUrl = import.meta.env.VITE_JAEGER_URL;
-  const prometheusUrl = import.meta.env.VITE_PROMETHEUS_URL;
+  const grafanaUrl = (import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3001');
+  const jaegerUrl = (import.meta.env.VITE_JAEGER_URL || 'http://localhost:16686');
+  const prometheusUrl = (import.meta.env.VITE_PROMETHEUS_URL || 'http://localhost:9090');
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
   const [telemetry, setTelemetry] = useState(DEFAULT_TELEMETRY);
   const [verifying, setVerifying] = useState(false);
   const [verifyBanner, setVerifyBanner] = useState('');
   const [iframeTick, setIframeTick] = useState(1);
-  const [activeIframeView, setActiveIframeView] = useState('grafana');
+  const [searchParams] = useSearchParams();
+  const requestedView = searchParams.get('view');
+  const [activeIframeView, setActiveIframeView] = useState(['grafana', 'jaeger', 'prometheus'].includes(requestedView) ? requestedView : 'grafana');
+  const [summary, setSummary] = useState(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => getRequestSummary().then((d) => live && setSummary(d)).catch(() => {});
+    load();
+    const t = setInterval(load, 8000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  useEffect(() => {
+    if (['grafana', 'jaeger', 'prometheus'].includes(requestedView)) {
+      setActiveIframeView(requestedView);
+      setShowIframe(true);
+      setTimeout(() => document.getElementById('observability')?.scrollIntoView({ behavior: 'smooth' }), 400);
+    }
+  }, [requestedView]);
   const [showIframe, setShowIframe] = useState(true);
 
   const applyTelemetryPayload = (data) => {
@@ -190,26 +208,26 @@ export default function AdminDashboardPage() {
   const statPanels = [
     {
       label: 'HTTP Gateway Requests',
-      value: Math.round(telemetry.totals.http_requests || 18),
-      sub: `Avg Latency: ${telemetry.averages_ms.http || 24.5} ms`,
+      value: Math.round(telemetry.totals.http_requests || 0),
+      sub: `Avg Latency: ${telemetry.averages_ms.http || 0} ms`,
       color: '#3b82f6',
     },
     {
       label: 'Coordinator Workflows',
-      value: Math.round(telemetry.totals.workflows || 3),
-      sub: `Avg Duration: ${telemetry.averages_ms.workflow || 96.4} ms`,
+      value: Math.round(telemetry.totals.workflows || 0),
+      sub: `Avg Duration: ${telemetry.averages_ms.workflow || 0} ms`,
       color: '#10b981',
     },
     {
       label: 'A2A Agent Hops',
-      value: Math.round(telemetry.totals.a2a_requests || 12),
-      sub: `Avg Hop: ${telemetry.averages_ms.a2a || 12.4} ms`,
+      value: Math.round(telemetry.totals.a2a_requests || 0),
+      sub: `Avg Hop: ${telemetry.averages_ms.a2a || 0} ms`,
       color: '#8b5cf6',
     },
     {
       label: 'MCP Tool Executions',
-      value: Math.round(telemetry.totals.mcp_calls || 15),
-      sub: `Avg Tool Call: ${telemetry.averages_ms.mcp || 8.9} ms`,
+      value: Math.round(telemetry.totals.mcp_calls || 0),
+      sub: `Avg Tool Call: ${telemetry.averages_ms.mcp || 0} ms`,
       color: '#f59e0b',
     },
   ];
@@ -231,6 +249,71 @@ export default function AdminDashboardPage() {
           Platform governance, facility memberships, security auditing, and telemetry links
         </p>
       </div>
+
+      <Card title="Blood requests by hospital" subtitle="Every request staff have made, the units asked for, and the units secured so far.">
+        {!summary ? (
+          <p className="text-secondary">Loading…</p>
+        ) : summary.totals.requests === 0 ? (
+          <p className="text-secondary">No requests yet. They appear here as soon as hospital staff make one.</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              {[['Requests', summary.totals.requests], ['Hospitals', summary.totals.hospitals],
+                ['Units requested', summary.totals.units_requested], ['Units secured', summary.totals.units_secured],
+                ['Fully fulfilled', summary.totals.fulfilled_requests]].map(([label, value]) => (
+                <div key={label} style={{ flex: '1 1 140px', padding: '0.75rem 1rem', border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                  <div className="text-secondary" style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
+                    <th style={{ padding: '0.5rem' }}>Hospital</th><th style={{ padding: '0.5rem' }}>Requests</th>
+                    <th style={{ padding: '0.5rem' }}>Units requested</th><th style={{ padding: '0.5rem' }}>Units secured</th>
+                    <th style={{ padding: '0.5rem' }}>Fulfilled</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.hospitals.map((h) => (
+                    <tr key={h.hospital_id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '0.5rem', fontWeight: 600 }}>{h.hospital_name}</td>
+                      <td style={{ padding: '0.5rem' }}>{h.requests}</td>
+                      <td style={{ padding: '0.5rem' }}>{h.units_requested}</td>
+                      <td style={{ padding: '0.5rem', color: h.units_secured >= h.units_requested ? 'var(--color-success, #15803d)' : 'inherit' }}>{h.units_secured}</td>
+                      <td style={{ padding: '0.5rem' }}>{h.fulfilled_requests} of {h.requests}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h3 style={{ fontSize: '1rem', margin: '1.25rem 0 0.5rem' }}>Latest requests</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
+                    <th style={{ padding: '0.5rem' }}>#</th><th style={{ padding: '0.5rem' }}>Hospital</th><th style={{ padding: '0.5rem' }}>Group</th>
+                    <th style={{ padding: '0.5rem' }}>Units</th><th style={{ padding: '0.5rem' }}>Secured</th><th style={{ padding: '0.5rem' }}>Status</th>
+                    <th style={{ padding: '0.5rem' }}>Urgency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.recent.slice(0, 15).map((r) => (
+                    <tr key={r.request_id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '0.5rem' }}><Link to={`/blood-requests/${r.request_id}`}>#{r.request_id}</Link></td>
+                      <td style={{ padding: '0.5rem' }}>{r.hospital_name}</td><td style={{ padding: '0.5rem' }}>{r.blood_group}</td>
+                      <td style={{ padding: '0.5rem' }}>{r.units_requested}</td><td style={{ padding: '0.5rem' }}>{r.units_secured}</td>
+                      <td style={{ padding: '0.5rem' }}>{r.status}</td><td style={{ padding: '0.5rem' }}>{r.urgency}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Card>
 
       <div
         style={{
@@ -504,6 +587,7 @@ export default function AdminDashboardPage() {
 
         {/* Embedded Iframe Viewer Section */}
         <div
+          id="observability"
           style={{
             padding: '1rem',
             borderRadius: '8px',

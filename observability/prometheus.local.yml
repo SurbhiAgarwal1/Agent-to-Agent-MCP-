@@ -1,0 +1,28 @@
+# Scrapes the services that scripts/run_distributed.py runs on this machine (see METRICS_PORTS in that script).
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: gateway
+    static_configs: [{targets: ["host.docker.internal:9464"]}]
+  - job_name: mcp-server
+    static_configs: [{targets: ["host.docker.internal:9465"]}]
+  - job_name: coordinator-agent
+    static_configs: [{targets: ["host.docker.internal:9470"]}]
+  - job_name: requirement-agent
+    static_configs: [{targets: ["host.docker.internal:9471"]}]
+  - job_name: matching-agent
+    static_configs: [{targets: ["host.docker.internal:9472"]}]
+  - job_name: location-agent
+    static_configs: [{targets: ["host.docker.internal:9473"]}]
+  - job_name: notification-agent
+    static_configs: [{targets: ["host.docker.internal:9474"]}]
+  - job_name: communication-agent
+    static_configs: [{targets: ["host.docker.internal:9475"]}]
+  - job_name: calling-agent
+    static_configs: [{targets: ["host.docker.internal:9476"]}]
+  - job_name: pharmacy-agent
+    static_configs: [{targets: ["host.docker.internal:9477"]}]
+  - job_name: emergency-priority-agent
+    static_configs: [{targets: ["host.docker.internal:9478"]}]

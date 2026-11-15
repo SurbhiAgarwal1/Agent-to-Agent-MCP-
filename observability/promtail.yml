@@ -1,0 +1,28 @@
+server:
+  http_listen_port: 9080
+positions:
+  filename: /positions/positions.yaml
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+scrape_configs:
+  - job_name: blood-services
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: blood-services
+          __path__: /logs/*.log
+    pipeline_stages:
+      # logs/<service>.log -> service label (falls back to the file name for non-JSON lines such as uvicorn's)
+      - regex:
+          source: filename
+          expression: '/logs/(?P<service_file>[^/]+)\.log$'
+      - labels:
+          service_file:
+      # the app writes one JSON object per line: timestamp, service, level, message, trace_id, span_id
+      - json:
+          expressions:
+            level: level
+            message: message
+            trace_id: trace_id
+      - labels:
+          level:

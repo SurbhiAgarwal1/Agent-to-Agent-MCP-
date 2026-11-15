@@ -18,6 +18,7 @@ import StatusBadge from '../components/common/StatusBadge';
 import UrgencyBadge from '../components/common/UrgencyBadge';
 import BloodGroupBadge from '../components/common/BloodGroupBadge';
 import ResponsesPanel from '../components/coordination/ResponsesPanel';
+import OrderStatusPanel from '../components/coordination/OrderStatusPanel';
 import CoordinationWorkflow from '../components/coordination/CoordinationWorkflow';
 import MatchesList from '../components/matching/MatchesList';
 import useAuth from '../hooks/useAuth';
@@ -148,7 +149,7 @@ export default function BloodRequestDetailsPage() {
       if (allocatedList.length > 0) {
         setMatches(allocatedList);
       }
-      setSuccessMessage('Blood allocation has been confirmed and reserved successfully.');
+      setSuccessMessage('Order placed! Blood banks and donors have been notified. The Order status below shows who confirms and when the blood should arrive.');
       const updatedReq = await getBloodRequest(requestId);
       setRequest(updatedReq);
 
@@ -414,15 +415,21 @@ export default function BloodRequestDetailsPage() {
                   >
                     Find Available Blood
                   </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleOrchestrate}
-                    loading={coordinating}
-                    title="Reserves units and automatically dispatches Voice Agent to nearest provider"
-                  >
-                    Confirm Booking / Place Order
-                  </Button>
+                  {request.order_placed_at ? (
+                    <span data-testid="order-placed-badge" style={{ padding: '0.4rem 0.9rem', borderRadius: 8, background: '#ecfdf5', color: '#166534', fontWeight: 700, border: '1px solid #86efac' }}>
+                      ✓ Order placed
+                    </span>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleOrchestrate}
+                      loading={coordinating}
+                      title="Reserves units and automatically dispatches Voice Agent to nearest provider"
+                    >
+                      Confirm Booking / Place Order
+                    </Button>
+                  )}
                 </>
               )}
               <Button
@@ -565,6 +572,7 @@ export default function BloodRequestDetailsPage() {
       </div>
 
       <div style={{ marginBottom: '1.5rem' }}>
+        <OrderStatusPanel requestId={requestId} />
         <ResponsesPanel requestId={requestId} />
       </div>
 
@@ -932,6 +940,7 @@ export default function BloodRequestDetailsPage() {
                   <div>• <strong>Blood Requirement:</strong> {request.blood_group} ({request.units_required} Units)</div>
                   <div>• <strong>Delivering To:</strong> {hospitalInfo?.name || `Hospital #${request.hospital_id}`}</div>
                   <div>• <strong>Source Provider:</strong> {orderModal.targetMatch?.name || orderModal.targetMatch?.source_name || 'Blood Bank'}</div>
+                  {orderModal.targetMatch?.estimated_time && <div>• <strong>Estimated delivery:</strong> {String(orderModal.targetMatch.estimated_time).replace(' (approx straight-line)', '')}</div>}
                 </div>
 
                 <button

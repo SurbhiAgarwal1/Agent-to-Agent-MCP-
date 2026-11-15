@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import { listBloodRequests } from '../api/bloodRequests';
+import { listHospitals } from '../api/hospitals';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -13,6 +14,7 @@ import EmptyState from '../components/common/EmptyState';
 export default function DashboardPage() {
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
+  const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -23,6 +25,7 @@ export default function DashboardPage() {
     let isMounted = true;
     if (isHospitalOrAdmin) {
       setLoading(true);
+      Promise.resolve(listHospitals()).catch(() => []).then((h) => { if (isMounted) setHospitals(h || []); });
       listBloodRequests()
         .then((data) => {
           if (isMounted) setRequests(data || []);
@@ -164,7 +167,7 @@ export default function DashboardPage() {
                         <td>
                           <strong>#{req.request_id}</strong>
                         </td>
-                        <td>Hospital #{req.hospital_id}</td>
+                        <td>{(hospitals.find((h) => h.hospital_id === req.hospital_id) || {}).name || `Hospital #${req.hospital_id}`}</td>
                         <td>
                           <BloodGroupBadge group={req.blood_group} />
                         </td>

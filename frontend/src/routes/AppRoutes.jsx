@@ -100,7 +100,7 @@ export default function AppRoutes() {
           path="/admin/users"
           element={
             <RoleRoute allowedRoles={['ADMIN']}>
-              <MembershipManagementPage />
+              <MembershipManagementPage mode="users" />
             </RoleRoute>
           }
         />

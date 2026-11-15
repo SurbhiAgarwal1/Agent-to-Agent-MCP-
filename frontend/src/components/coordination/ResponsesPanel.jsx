@@ -29,7 +29,7 @@ export default function ResponsesPanel({ requestId }) {
           <tbody>
             {data.responses.map((r) => (
               <tr key={`${r.source_type}-${r.notification_id}`}>
-                <td>{r.source_type === 'DONOR' ? 'Donor' : 'Blood bank'} #{r.source_id}</td>
+                <td>{r.source_name || `${r.source_type === 'DONOR' ? 'Donor' : 'Blood bank'} #${r.source_id}`}</td>
                 <td>{LABEL[r.response_status] || r.response_status}</td>
                 <td>{r.units ?? '—'}</td>
                 <td>{r.reason || ''}</td>

@@ -1,0 +1,119 @@
+{
+ "id": null,
+ "uid": "logs",
+ "title": "Logs",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "15s",
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "tags": [
+  "logs"
+ ],
+ "panels": [
+  {
+   "id": 1,
+   "title": "Log lines per minute, by service",
+   "type": "timeseries",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum by (service_file) (count_over_time({job=\"blood-services\"}[1m]))",
+     "legendFormat": "{{service_file}}",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "title": "Warnings and errors per minute",
+   "type": "timeseries",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum by (level) (count_over_time({job=\"blood-services\", level=~\"WARNING|ERROR|CRITICAL\"}[1m]))",
+     "legendFormat": "{{level}}",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "title": "Warnings and errors",
+   "type": "logs",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 24,
+    "h": 9
+   },
+   "options": {
+    "showTime": true,
+    "wrapLogMessage": true,
+    "sortOrder": "Descending",
+    "enableLogDetails": true
+   },
+   "targets": [
+    {
+     "expr": "{job=\"blood-services\", level=~\"WARNING|ERROR|CRITICAL\"}",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "title": "All service logs (click a line, then the trace link, to open its trace in Jaeger)",
+   "type": "logs",
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 24,
+    "h": 12
+   },
+   "options": {
+    "showTime": true,
+    "wrapLogMessage": true,
+    "sortOrder": "Descending",
+    "enableLogDetails": true
+   },
+   "targets": [
+    {
+     "expr": "{job=\"blood-services\"}",
+     "refId": "A",
+     "queryType": "range"
+    }
+   ]
+  }
+ ]
+}

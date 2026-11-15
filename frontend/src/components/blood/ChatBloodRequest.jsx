@@ -1,17 +1,18 @@
 import React, { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { processNlRequest } from '../../api/bloodRequests';
-import { useHospital } from '../../context/HospitalContext';
 import Card from '../common/Card';
 
 export default function ChatBloodRequest() {
   const navigate = useNavigate();
-  const { hospitals, selectedHospitalId, selectHospital, currentHospital } = useHospital();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const textareaRef = useRef(null);
+  // What the user has typed since the last request went through; sent together so a follow-up
+  // like just the hospital name still comes with the blood group and units from before.
+  const pendingRef = useRef([]);
 
   const handleSubmit = async (event) => {
     event?.preventDefault();
@@ -22,11 +23,8 @@ export default function ChatBloodRequest() {
       return;
     }
 
-    // Automatically append active hospital name context if user didn't mention it
-    let fullPrompt = text;
-    if (currentHospital && !text.toLowerCase().includes(currentHospital.name.toLowerCase().slice(0, 10))) {
-      fullPrompt = `[Hospital: ${currentHospital.name}] ${text}`;
-    }
+    pendingRef.current = [...pendingRef.current, text];
+    const fullPrompt = pendingRef.current.join('\n');
 
     setError(null);
     setMessages((current) => [...current, { role: 'user', content: text }]);
@@ -36,7 +34,13 @@ export default function ChatBloodRequest() {
     try {
       const response = await processNlRequest(fullPrompt);
 
+      if (response?.status === 'NEEDS_CLARIFICATION') {
+        setMessages((current) => [...current, { role: 'assistant', content: response.message }]);
+        return;
+      }
+
       if (!response || response.success === false) {
+        pendingRef.current = [];
         throw new Error(
           response?.message || 'We could not process your blood request.'
         );
@@ -48,6 +52,7 @@ export default function ChatBloodRequest() {
         response?.response ||
         'Your request was received.';
 
+      pendingRef.current = [];
       setMessages((current) => [...current, { role: 'assistant', content: summary }]);
 
       const requestId =
@@ -90,44 +95,6 @@ export default function ChatBloodRequest() {
           </p>
         </div>
 
-        {/* Active Hospital Selector Pill */}
-        {hospitals.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              backgroundColor: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              padding: '0.4rem 0.85rem',
-              borderRadius: '8px',
-            }}
-          >
-            <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-              Hospital:
-            </span>
-            <select
-              value={selectedHospitalId}
-              onChange={(e) => selectHospital(e.target.value)}
-              style={{
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                padding: '0.2rem 0.4rem',
-                borderRadius: '4px',
-                border: '1px solid var(--color-border)',
-                backgroundColor: 'transparent',
-                color: 'var(--color-text-primary)',
-                cursor: 'pointer',
-              }}
-            >
-              {hospitals.map((h) => (
-                <option key={h.hospital_id} value={h.hospital_id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
 
       <Card>
@@ -154,10 +121,10 @@ export default function ChatBloodRequest() {
             >
               <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🩸</div>
               <h2 style={{ fontSize: '1.1rem', margin: 0 }}>
-                {currentHospital ? `Lodge request for ${currentHospital.name}` : 'How can we help?'}
+                How can we help?
               </h2>
               <p className="text-secondary" style={{ margin: '0.5rem 0 0', lineHeight: 1.6 }}>
-                Describe the blood group, number of units, urgency, and any other useful details.
+                Type the blood group, number of units, urgency and your hospital's name, for example: "2 units of O+ urgently at Manipal Hospital, Old Airport Road". Any hospital in Bengaluru works.
               </p>
             </div>
           ) : (

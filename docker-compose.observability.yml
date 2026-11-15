@@ -1,0 +1,68 @@
+# Grafana + Prometheus + Jaeger + Loki for the app started by `python -m scripts.run_distributed`.
+# The app itself runs on your machine; these containers only watch it.
+#
+#   docker compose -f docker-compose.observability.yml up -d      (start BEFORE the launcher so traces are recorded)
+#   docker compose -f docker-compose.observability.yml down       (stop)
+#
+# Grafana http://localhost:3001 (admin / admin, or GRAFANA_ADMIN_PASSWORD)   Jaeger http://localhost:16686
+# Prometheus http://localhost:9090
+name: blood-observability
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:16686:16686", "127.0.0.1:4318:4318", "127.0.0.1:4317:4317"]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d"]
+    ports: ["127.0.0.1:9090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./observability/prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  loki:
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports: ["127.0.0.1:3100:3100"]
+    volumes:
+      - ./observability/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./observability/promtail.yml:/etc/promtail/promtail.yml:ro
+      - ./logs:/logs:ro
+      - promtail_positions:/positions
+    depends_on: [loki]
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"      # local use only: open the dashboards without logging in (view only)
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/system-health.json
+    volumes:
+      - ./observability/grafana/provisioning-local:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus, jaeger, loki]
+
+volumes:
+  prometheus_data:
+  loki_data:
+  promtail_positions:
+  grafana_data:

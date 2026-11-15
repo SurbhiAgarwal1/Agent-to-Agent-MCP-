@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   createUser,
@@ -6,11 +6,16 @@ import {
   grantBloodBankMembership,
   revokeHospitalMembership,
   revokeBloodBankMembership,
+  listUsers,
 } from '../api/admin';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 
-export default function MembershipManagementPage() {
+export default function MembershipManagementPage({ mode = 'memberships' }) {
+  const usersMode = mode === 'users';
+  const [users, setUsers] = useState([]);
+  const loadUsers = () => listUsers().then(setUsers).catch(() => setUsers([]));
+  useEffect(() => { loadUsers(); }, []);
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -49,6 +54,7 @@ export default function MembershipManagementPage() {
     try {
       const res = await createUser(userEmail, userPassword, userRole);
       setSuccessMsg(`Successfully created user #${res.id} (${res.email}) with role ${res.role}.`);
+      loadUsers();
       setUserEmail('');
       setUserPassword('');
     } catch (err) {
@@ -117,10 +123,10 @@ export default function MembershipManagementPage() {
           &larr; Back to Admin Console
         </Link>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, margin: '0.25rem 0 0', color: 'var(--color-text-main)' }}>
-          Membership & User Governance
+          {usersMode ? 'User Management' : 'Facility Memberships'}
         </h1>
         <p className="text-secondary" style={{ marginTop: '0.25rem', fontSize: '0.9375rem' }}>
-          Provision system users and bind clinical personnel to authorized healthcare facilities
+          {usersMode ? 'Create accounts and see every user, their role and the hospital or blood bank they belong to.' : 'Give hospital staff access to a hospital, or blood bank staff to a blood bank, and revoke it. User IDs are on the User Management page.'}
         </p>
       </div>
 
@@ -143,6 +149,7 @@ export default function MembershipManagementPage() {
         }}
       >
         {/* Create User Form */}
+        {usersMode && (
         <Card title="Provision New User">
           <form onSubmit={handleCreateUser}>
             <div className="form-group">
@@ -197,8 +204,10 @@ export default function MembershipManagementPage() {
             </Button>
           </form>
         </Card>
+        )}
 
         {/* Grant Hospital Membership */}
+        {!usersMode && (<>
         <Card title="Grant Hospital Membership">
           <p className="text-secondary" style={{ fontSize: '0.8125rem', marginBottom: '1rem' }}>
             Requires target user to have the <code>HOSPITAL_STAFF</code> role.
@@ -360,7 +369,38 @@ export default function MembershipManagementPage() {
             </Button>
           </form>
         </Card>
+        </>)}
       </div>
+
+      {usersMode && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <Card title={`All users (${users.length})`}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--color-text-secondary)' }}>
+                    <th style={{ padding: '0.5rem' }}>ID</th><th style={{ padding: '0.5rem' }}>Email</th>
+                    <th style={{ padding: '0.5rem' }}>Role</th><th style={{ padding: '0.5rem' }}>Belongs to</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id} style={{ borderTop: '1px solid var(--color-border)' }}>
+                      <td style={{ padding: '0.5rem' }}>{u.id}</td>
+                      <td style={{ padding: '0.5rem' }}>{u.email}</td>
+                      <td style={{ padding: '0.5rem' }}>{u.role}</td>
+                      <td style={{ padding: '0.5rem' }}>
+                        {u.hospitals?.length ? u.hospitals.join(', ')
+                          : u.linked_to ? `${u.linked_to.kind === 'donor' ? 'Donor' : 'Blood bank'} #${u.linked_to.id}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

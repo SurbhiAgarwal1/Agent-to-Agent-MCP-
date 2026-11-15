@@ -24,9 +24,9 @@ export function Sidebar({ isOpen, onClose }) {
   });
 
   const telemetry = [
-    ["Grafana Dashboards", "📈", import.meta.env.VITE_GRAFANA_URL],
-    ["Jaeger Traces", "🔍", import.meta.env.VITE_JAEGER_URL],
-    ["Prometheus Status", "📊", import.meta.env.VITE_PROMETHEUS_URL],
+    ["Grafana Dashboards", "📈", (import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3001'), "grafana"],
+    ["Jaeger Traces", "🔍", (import.meta.env.VITE_JAEGER_URL || 'http://localhost:16686'), "jaeger"],
+    ["Prometheus Status", "📊", (import.meta.env.VITE_PROMETHEUS_URL || 'http://localhost:9090'), "prometheus"],
   ];
 
   return (
@@ -158,7 +158,7 @@ export function Sidebar({ isOpen, onClose }) {
                 Operations Telemetry
               </p>
 
-              {telemetry.map(([label, icon, href]) =>
+              {telemetry.map(([label, icon, href, view]) =>
                 href ? (
                   <a
                     key={label}
@@ -170,17 +170,14 @@ export function Sidebar({ isOpen, onClose }) {
                     <span>{icon}</span><span>{label} ↗</span>
                   </a>
                 ) : (
-                  <div
+                  <NavLink
                     key={label}
-                    style={{
-                      ...navLinkStyle({ isActive: false }),
-                      fontSize: "0.8rem",
-                      cursor: "default",
-                    }}
-                    aria-disabled="true"
+                    to={`/admin?view=${view}`}
+                    onClick={onClose}
+                    style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
                   >
-                    <span>{icon}</span><span>{label} — Not configured</span>
-                  </div>
+                    <span>{icon}</span><span>{label}</span>
+                  </NavLink>
                 )
               )}
             </div>

@@ -29,3 +29,11 @@ export async function revokeHospitalMembership(membershipId) {
 export async function revokeBloodBankMembership(membershipId) {
   return apiClient.delete(`/api/v1/auth/blood-bank-memberships/${membershipId}`);
 }
+
+export async function listUsers() {
+  return apiClient.get("/api/v1/auth/users");
+}
+
+export async function getRequestSummary() {
+  return apiClient.get("/api/v1/admin/request-summary");
+}

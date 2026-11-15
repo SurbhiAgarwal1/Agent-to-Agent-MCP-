@@ -311,6 +311,11 @@ def orchestrate_blood_request(
         if result.get("failed_at") == "STATE":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request state does not allow orchestration.")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Orchestration could not complete its agent workflow.")
+    # Booking confirmed: remember when, so the hospital sees an order (and its progress) from now on.
+    placed = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
+    if placed is not None and placed.order_placed_at is None:
+        placed.order_placed_at = datetime.now(timezone.utc)
+        db.commit()
     return result
 
 

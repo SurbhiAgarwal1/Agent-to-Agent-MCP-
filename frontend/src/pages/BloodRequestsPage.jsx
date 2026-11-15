@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { listBloodRequests } from '../api/bloodRequests';
 import { listHospitals } from '../api/hospitals';
-import { useHospital } from '../context/HospitalContext';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -12,7 +11,6 @@ import BloodGroupBadge from '../components/common/BloodGroupBadge';
 import EmptyState from '../components/common/EmptyState';
 
 export default function BloodRequestsPage() {
-  const { selectedHospitalId, selectHospital } = useHospital();
   const [requests, setRequests] = useState([]);
   const [hospitalsMap, setHospitalsMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -117,13 +115,10 @@ export default function BloodRequestsPage() {
               value={hospitalFilter}
               onChange={(e) => {
                 setHospitalFilter(e.target.value);
-                if (e.target.value !== 'ALL') {
-                  selectHospital(e.target.value);
-                }
               }}
             >
               <option value="ALL">All Hospitals</option>
-              {Object.values(hospitalsMap).map((h) => (
+              {Object.values(hospitalsMap).filter((h) => requests.some((r) => r.hospital_id === h.hospital_id)).map((h) => (
                 <option key={h.hospital_id} value={h.hospital_id}>
                   {h.name}
                 </option>

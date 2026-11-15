@@ -22,3 +22,7 @@ export const listHospitalAlerts = () => apiClient.get("/api/v1/hospital-alerts")
 export const markHospitalAlertRead = (id) => apiClient.post(`/api/v1/hospital-alerts/${id}/read`);
 export const getRequestResponses = (requestId) =>
   apiClient.get(`/api/v1/blood-requests/${requestId}/responses`);
+
+export function getRequestOrder(requestId) {
+  return apiClient.get(`/api/v1/blood-requests/${requestId}/order`);
+}

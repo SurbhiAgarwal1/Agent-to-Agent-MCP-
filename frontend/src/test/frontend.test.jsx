@@ -15,6 +15,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner.jsx';
 
 // Coordination & Matching
 import CoordinationWorkflow from '../components/coordination/CoordinationWorkflow.jsx';
+import { listHospitals } from '../api/hospitals.js';
 import MatchesList from '../components/matching/MatchesList.jsx';
 
 // Route guards
@@ -67,6 +68,8 @@ vi.mock('../api/admin.js', () => ({
   grantBloodBankMembership: vi.fn(),
   revokeHospitalMembership: vi.fn(),
   revokeBloodBankMembership: vi.fn(),
+  listUsers: vi.fn().mockResolvedValue([]),
+  getRequestSummary: vi.fn().mockResolvedValue({ totals: { requests: 0, hospitals: 0, units_requested: 0, units_secured: 0, fulfilled_requests: 0 }, hospitals: [], recent: [] }),
 }));
 
 vi.mock('../api/auth.js', () => ({
@@ -413,6 +416,8 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
       },
     ]);
 
+    listHospitals.mockResolvedValue([]);
+
     render(
       <MemoryRouter>
         <BloodRequestsPage />
@@ -563,10 +568,8 @@ describe('5. Coordination Workflow & Match Fulfillment', () => {
     expect(screen.getByText('City Red Cross')).toBeInTheDocument();
     expect(screen.getByText('5.0 km')).toBeInTheDocument();
 
-    // Test Complete modal
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
-    expect(screen.getByText('Complete Match Delivery')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Delivery' }));
+    // Complete is a one-click action (no confirmation dialog)
+    fireEvent.click(screen.getByRole('button', { name: /Complete/ }));
     await waitFor(() => {
       expect(onComplete).toHaveBeenCalledWith(1);
     });
@@ -574,7 +577,7 @@ describe('5. Coordination Workflow & Match Fulfillment', () => {
     // Test Reject modal
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     expect(screen.getByText('Reject Match')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/Rejection Reason/i), { target: { value: 'Traffic delay' } });
+    fireEvent.change(screen.getByLabelText(/Reason for Rejection/i), { target: { value: 'Traffic delay' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Rejection' }));
     await waitFor(() => {
       expect(onReject).toHaveBeenCalledWith(1, 'Traffic delay');

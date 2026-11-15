@@ -17,12 +17,17 @@ import socket
 import subprocess
 import sys
 import time
+import threading
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
 BACKEND_PORT, MCP_PORT, BANK_PORT, DONOR_PORT = 8000, 8001, 8205, 8206
+# One Prometheus scrape port per Python process that records metrics (not shifted by --port-offset).
+METRICS_PORTS = {"gateway": 9464, "mcp": 9465, "coordinator": 9470, "requirement": 9471, "matching": 9472, "location": 9473,
+                 "notification": 9474, "communication": 9475, "calling": 9476, "pharmacy": 9477, "emergency-priority": 9478}
+OTLP_PORT = 4318  # Jaeger's OTLP/HTTP receiver (docker-compose.observability.yml)
 AGENTS = {  # A2A_AGENT value -> (port, env-var prefix used for discovery bootstrap)
     "coordinator": 8100, "requirement": 8101, "matching": 8102, "location": 8103, "notification": 8104,
     "communication": 8105, "calling": 8106, "pharmacy": 8107, "emergency-priority": 8108,
@@ -74,6 +79,9 @@ def main() -> None:
     ap.add_argument("--banks", type=int, default=100)
     ap.add_argument("--donors", type=int, default=2000)
     ap.add_argument("--port-offset", type=int, default=0, help="shift every port (e.g. 1000) if the defaults are busy")
+    ap.add_argument("--reseed", action="store_true", help="wipe and regenerate the synthetic blood bank / donor data "
+                    "(by default existing data is kept, so banks and donors people signed up as survive a restart)")
+    ap.add_argument("--no-observability", action="store_true", help="do not record metrics / traces for Grafana, Jaeger, Prometheus")
     ap.add_argument("--llm", default=os.getenv("LLM_PROVIDER", "mock"), help="mock (default) or gemini")
     args = ap.parse_args()
 
@@ -106,7 +114,8 @@ def main() -> None:
         env["ROUTING_PROVIDER"] = "ors"
     env.update({
         "ENVIRONMENT": env.get("ENVIRONMENT", "development"),
-        "OBSERVABILITY_ENABLED": "false",
+        "OBSERVABILITY_ENABLED": "false" if args.no_observability else "true",
+        "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8",
         "LLM_PROVIDER": args.llm,
         "A2A_EXECUTION_MODE": "distributed",
         "DATA_APIS_ENABLED": "true",
@@ -126,7 +135,10 @@ def main() -> None:
     for name, port in AGENTS.items():
         env[f"{prefix(name)}_BASE_URL"] = f"http://127.0.0.1:{port}"
 
-    if not args.no_seed:
+    seed_needed = args.reseed or not ((data_dir / "blood_bank_data.db").exists() and (data_dir / "donor_data.db").exists())
+    if not args.no_seed and not seed_needed:
+        print("Keeping the existing blood bank / donor data (use --reseed to regenerate it).")
+    if not args.no_seed and seed_needed:
         print(f"Seeding synthetic data ({args.banks} blood banks, {args.donors} donors)...")
         subprocess.run([PY, "-m", "scripts.seed_blood_bank_data", "--blood-banks", str(args.banks), "--hospitals", "50",
                         "--inventory-records", str(args.banks * 16), "--historical-requests", "500", "--reset"],
@@ -135,10 +147,34 @@ def main() -> None:
                         "--notification-records", "500", "--blood-bank-count", str(args.banks), "--reset"],
                        cwd=ROOT, env=env, check=True)
 
+    tracing = False
+    if not args.no_observability:
+        tracing = not port_is_free(OTLP_PORT)
+        env["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"http://127.0.0.1:{OTLP_PORT}"
+        env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
+        env["OTEL_TRACES_EXPORTER"] = "otlp" if tracing else "none"   # no Jaeger running -> don't spam export errors
+
     procs: list[tuple[str, subprocess.Popen]] = []
 
-    def start(label: str, command: list[str], port: int, extra: dict | None = None) -> None:
-        proc = subprocess.Popen(command, cwd=ROOT, env={**env, **(extra or {})})
+    logs_dir = ROOT / "logs"
+    logs_dir.mkdir(exist_ok=True)
+
+    def tee(proc: subprocess.Popen, path: Path) -> None:
+        """Show a service's output here and also keep it in logs/<service>.log (Grafana reads those files)."""
+        with open(path, "w", encoding="utf-8", errors="replace") as log:
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                log.write(line)
+                log.flush()
+
+    def start(label: str, command: list[str], port: int, extra: dict | None = None, metrics: str | None = None) -> None:
+        child_env = {**env, **(extra or {})}
+        if metrics and not args.no_observability:
+            child_env["OBSERVABILITY_METRICS_PORT"] = str(METRICS_PORTS[metrics])
+        proc = subprocess.Popen(command, cwd=ROOT, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace", bufsize=1)
+        threading.Thread(target=tee, args=(proc, logs_dir / f"{label}.log"), daemon=True).start()
         procs.append((label, proc))
         wait_port(port, proc, label)
         print(f"  up  {label:<22} http://127.0.0.1:{port}")
@@ -162,15 +198,21 @@ def main() -> None:
         print("Starting services...")
         start("blood-bank-data-api", [*uvicorn, "blood_bank_api.main:app", "--port", str(BANK_PORT)], BANK_PORT)
         start("donor-data-api", [*uvicorn, "donor_api.main:app", "--port", str(DONOR_PORT)], DONOR_PORT)
-        start("mcp-server", [PY, "-m", "app.mcp.protocol_server"], MCP_PORT)
+        start("mcp-server", [PY, "-m", "app.mcp.protocol_server"], MCP_PORT, metrics="mcp")
         for name, port in AGENTS.items():
             start(f"{name}-agent", [*uvicorn, "app.agents.a2a.service:create_service", "--factory", "--port", str(port)], port,
-                  {"A2A_AGENT": name, f"{prefix(name)}_A2A_URL": f"http://127.0.0.1:{port}/a2a", "OTEL_SERVICE_NAME": f"{name}-agent"})
-        start("backend", [*uvicorn, "app.main:app", "--port", str(BACKEND_PORT)], BACKEND_PORT, {"OTEL_SERVICE_NAME": "gateway"})
+                  {"A2A_AGENT": name, f"{prefix(name)}_A2A_URL": f"http://127.0.0.1:{port}/a2a", "OTEL_SERVICE_NAME": f"{name}-agent"}, metrics=name)
+        start("backend", [*uvicorn, "app.main:app", "--port", str(BACKEND_PORT)], BACKEND_PORT, {"OTEL_SERVICE_NAME": "gateway"}, metrics="gateway")
         with urllib.request.urlopen(f"http://127.0.0.1:{AGENTS['matching']}/.well-known/agent-card.json", timeout=5) as r:
             assert r.status == 200
         print(f"Places provider: {'Geoapify' if env.get('GEOAPIFY_API_KEY') else 'OpenStreetMap Overpass (set GEOAPIFY_API_KEY for Geoapify)'}"
               f" | Routing: {'OpenRouteService' if env.get('ROUTING_PROVIDER') == 'ors' else 'straight-line estimate (set ORS_API_KEY)'}")
+        if args.no_observability:
+            print("Monitoring: off (--no-observability)")
+        else:
+            print("Monitoring: metrics on" + (", traces going to Jaeger" if tracing else
+                  " | traces off (start Jaeger first:  docker compose -f docker-compose.observability.yml up -d  then restart this)"))
+            print("            Grafana http://localhost:3001   Jaeger http://localhost:16686   Prometheus http://localhost:9090")
         print(f"\nAll services running. API docs: http://127.0.0.1:{BACKEND_PORT}/docs   (Ctrl+C to stop)")
         while True:
             for label, proc in procs:

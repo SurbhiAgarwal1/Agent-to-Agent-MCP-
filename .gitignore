@@ -52,3 +52,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 node_modules/
+
+# service logs written by scripts/run_distributed.py
+logs/

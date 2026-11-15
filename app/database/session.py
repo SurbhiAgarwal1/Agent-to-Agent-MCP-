@@ -35,13 +35,20 @@ def init_db() -> None:
     import app.models  # noqa: F401 (Ensure all models are registered)
     Base.metadata.create_all(bind=engine)
     ensure_schema(engine)
+    try:  # the Bengaluru hospital directory
+        from app.services.hospital_registry import ensure_bangalore_hospitals
+        with Session(bind=engine) as seed_db:
+            ensure_bangalore_hospitals(seed_db)
+    except Exception:  # never block startup on seeding
+        import logging
+        logging.getLogger(__name__).exception("Could not load the Bengaluru hospital directory")
 
 
 # Columns added after the first release: table -> [(column, SQL type)].
 # create_all() never alters existing tables, so older databases get them added here.
 _ADDED_COLUMNS = {
     "matches": [("units", "INTEGER"), ("blood_group", "VARCHAR(5)")],
-    "blood_requests": [("created_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"), ("component_type", "VARCHAR(32) NOT NULL DEFAULT 'packed_red_blood_cells'")],
+    "blood_requests": [("created_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"), ("component_type", "VARCHAR(32) NOT NULL DEFAULT 'packed_red_blood_cells'"), ("order_placed_at", "DATETIME")],
     "blood_inventories": [("component_type", "VARCHAR(32) NOT NULL DEFAULT 'packed_red_blood_cells'")],
 }
 

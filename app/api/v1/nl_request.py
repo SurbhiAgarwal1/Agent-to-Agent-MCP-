@@ -35,6 +35,7 @@ def process_natural_language_request(
     payload.text,
     current_user_id=current_user.id,
     allowed_hospital_ids=allowed,
+    claim_hospital=True,
 )
     structured_result = result.get("structured_result") or {}
 

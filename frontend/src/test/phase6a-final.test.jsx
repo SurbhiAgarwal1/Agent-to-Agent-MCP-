@@ -95,15 +95,15 @@ describe('Phase 6A final frontend behavior', () => {
     expect(document.querySelector('.sidebar.open')).toBeFalsy();
   });
 
-  it('does not render observability links when URLs are not configured', () => {
+  it('falls back to the local Grafana, Jaeger and Prometheus addresses when no URLs are configured', () => {
     authState.user = { role: 'ADMIN', email: 'admin@example.com' };
 
     render(<MemoryRouter><AdminDashboardPage /></MemoryRouter>);
 
-    expect(screen.getAllByText('Not configured')).toHaveLength(3);
-    expect(screen.queryByRole('link', { name: /Open Grafana/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Open Jaeger/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Open Prometheus/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Not configured')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Grafana/i })).toHaveAttribute('href', 'http://localhost:3001');
+    expect(screen.getByRole('link', { name: /Open Jaeger/i })).toHaveAttribute('href', 'http://localhost:16686');
+    expect(screen.getByRole('link', { name: /Open Prometheus/i })).toHaveAttribute('href', 'http://localhost:9090');
   });
 
   it('renders configured observability URLs as real admin links', () => {

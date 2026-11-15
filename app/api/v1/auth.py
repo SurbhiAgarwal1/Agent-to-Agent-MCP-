@@ -125,6 +125,20 @@ def create_user_by_admin(
         )
 
 
+@router.get("/users")
+def list_users(db: Session = Depends(get_db), current_user: User = Depends(require_role([UserRole.ADMIN]))):
+    """Admin-only list of every account, with the hospitals and donor / blood bank record each is tied to."""
+    from app.models.party_link import PartyLink
+    links = {l.user_id: l for l in db.query(PartyLink).all()}
+    hospitals: dict[int, list[str]] = {}
+    for m, name in (db.query(HospitalMembership, Hospital.name).join(Hospital, Hospital.hospital_id == HospitalMembership.hospital_id)
+                    .filter(HospitalMembership.is_active.is_(True)).all()):
+        hospitals.setdefault(m.user_id, []).append(name)
+    return [{"id": u.id, "email": u.email, "role": u.role, "hospitals": hospitals.get(u.id, []),
+             "linked_to": ({"kind": links[u.id].kind, "id": links[u.id].external_id} if u.id in links else None)}
+            for u in db.query(User).order_by(User.id.asc()).all()]
+
+
 @router.post("/login", response_model=Token)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     """Authenticate credentials and generate JWT access token."""

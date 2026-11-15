@@ -101,6 +101,7 @@ class NLInterfaceAgent:
         *,
         current_user_id: Optional[int] = None,
         allowed_hospital_ids: Optional[set[int]] = None,
+        claim_hospital: bool = False,
     ) -> Dict[str, Any]:
         """Parse a natural-language request, persist it, then coordinate it (via Coordinator A2A when configured)."""
         coordinator = CoordinatorAgent(
@@ -152,6 +153,12 @@ class NLInterfaceAgent:
                 "llm": llm_metadata,
             }
 
+        newly_registered = False
+        if hospital is None and not matches and claim_hospital and self.db is not None and len(plan.location.strip()) >= 3:
+            from app.services.hospital_registry import register_hospital
+            hospital = register_hospital(self.db, plan.location)
+            newly_registered = True
+
         if not hospital:
             return {
                 "success": False,
@@ -161,6 +168,16 @@ class NLInterfaceAgent:
                 "structured_result": None,
                 "llm": llm_metadata,
             }
+
+        if (
+            claim_hospital and allowed_hospital_ids is not None and current_user_id is not None
+            and hospital.hospital_id not in allowed_hospital_ids and self.db is not None
+        ):
+            # Staff choose their hospital by naming it; record that they work there so they see its alerts.
+            from app.models.membership import HospitalMembership
+            self.db.add(HospitalMembership(user_id=current_user_id, hospital_id=hospital.hospital_id, membership_type="STAFF", is_active=True))
+            self.db.commit()
+            allowed_hospital_ids = {*allowed_hospital_ids, hospital.hospital_id}
 
         if (
             allowed_hospital_ids is not None
@@ -206,6 +223,7 @@ class NLInterfaceAgent:
                 "request_id": new_request.request_id,
                 "hospital_id": hospital.hospital_id,
                 "hospital_name": hospital.name,
+                "hospital_registered": newly_registered,
             }
         )
 
@@ -251,7 +269,9 @@ class NLInterfaceAgent:
         sources_count = len(plan_result.get("plan", []))
 
         summary = (
-            f"Successfully processed request for {plan.location}: "
+            f"Successfully processed request for {hospital.name}"
+            + (" (new hospital added to the directory; its exact map position is not known yet)" if newly_registered else "")
+            + ": "
             f"{total_units}/{units_required} units of {plan.blood_group} secured "
             f"across {sources_count} source(s). "
             f"Plan status: {plan_result.get('status', 'COMPLETED')}."

@@ -1,0 +1,28 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+  - name: Jaeger
+    uid: jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        # a trace_id inside a log line becomes a link that opens the trace in Jaeger
+        - name: trace
+          datasourceUid: jaeger
+          matcherRegex: '"trace_id": ?"(\w+)"'
+          url: '$${__value.raw}'

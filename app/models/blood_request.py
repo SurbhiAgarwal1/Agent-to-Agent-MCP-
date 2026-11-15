@@ -22,6 +22,8 @@ class BloodRequest(Base):
     # Authenticated creator, set server-side. NULL for legacy requests created before ownership
     # tracking existed (those stay governed by hospital membership / admin access only).
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Set when the hospital confirms the booking ("Place Order"); NULL until then.
+    order_placed_at = Column(DateTime, nullable=True)
 
     # Relationships
     hospital = relationship("Hospital", back_populates="requests")

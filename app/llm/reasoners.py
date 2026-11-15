@@ -39,6 +39,48 @@ class MockReasoner(LLMReasoner):
     def __init__(self, *, scenario: str = "normal") -> None:
         self.scenario = scenario
 
+
+    @staticmethod
+    def _bangalore_location(text: str) -> str | None:
+        """A Bengaluru hospital mentioned by its full name or a short name people use (longest mention wins)."""
+        from data_apis.bangalore_hospitals import HOSPITALS
+        lowered = text.lower()
+        best = None
+        for name, aliases, _area, _lat, _lon in HOSPITALS:
+            for candidate in (name, *aliases):
+                if candidate.lower() in lowered and (best is None or len(candidate) > len(best)):
+                    best = candidate
+        return best
+
+    @staticmethod
+    def _typed_hospital_phrase(text: str) -> str | None:
+        """A hospital named in plain words ('<words> hospital', 'Greenleaf Nursing Home'), or a short line that is only a name."""
+        keyword = re.compile(r"^(hospitals?|hrudayalaya|college|institute|home|clinic|centre|center|nursing)$", re.IGNORECASE)
+        stop = {"we", "i", "need", "needs", "require", "required", "want", "units", "unit", "blood", "urgent", "urgently", "emergency",
+                "asap", "please", "at", "in", "for", "to", "near", "of", "a", "an", "the", "and", "from", "is", "are", "my", "our"}
+        for line in [ln.strip() for ln in text.splitlines() if ln.strip()]:
+            words = re.findall(r"[A-Za-z0-9.'&-]+", line)
+            for i, w in enumerate(words):
+                if not keyword.match(w):
+                    continue
+                end = i
+                while end + 1 < len(words) and keyword.match(words[end + 1]) or (end + 1 < len(words) and words[end + 1].lower() in {"home", "centre", "center", "college"} and keyword.match(words[end])):
+                    end += 1
+                start = i
+                while start > 0 and i - start < 5:
+                    prev = words[start - 1]
+                    if prev.lower() in stop or re.fullmatch(r"\d+|(?:AB|A|B|O)[+-]", prev, re.IGNORECASE):
+                        break
+                    start -= 1
+                if start < i:
+                    return " ".join(words[start:end + 1])
+        for line in reversed([ln.strip() for ln in text.splitlines() if ln.strip()]):
+            plain = (not re.search(r"\d", line) and len(line.split()) <= 7
+                     and not re.search(r"\b(need|require|urgent|urgently|blood|units?|please|emergency|asap)\b", line, re.IGNORECASE))
+            if plain:
+                return line.strip(" .,!?")
+        return None
+
     def generate_plan(self, user_request: str) -> ReasoningResult:
         text = user_request or ""
         blood_match = re.search(r"\b(AB|A|B|O)\s*([+-])(?!\w)", text, re.IGNORECASE)
@@ -83,8 +125,14 @@ class MockReasoner(LLMReasoner):
                 location = hosp
                 break
 
+        if not location:
+            location = self._bangalore_location(text)
+
         if not location and location_match:
             location = " ".join(part for part in location_match.groups() if part).strip()
+
+        if not location:
+            location = self._typed_hospital_phrase(text)
 
         # Extract medicines (e.g. "2 strips of Dolo 650", "Augmentin", "Paracetamol")
         known_meds = [

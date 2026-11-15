@@ -15,7 +15,7 @@ from app.models.blood_request import BloodRequest
 from app.models.hospital_alert import HospitalAlert
 from app.models.membership import HospitalMembership
 from app.models.user import User, UserRole
-from app.services import response_sync
+from app.services import order_status, response_sync
 
 router = APIRouter()
 STAFF = [UserRole.HOSPITAL_STAFF, UserRole.ADMIN]
@@ -69,7 +69,22 @@ def request_responses(request_id: int, db: Session = Depends(get_db), user: User
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Blood request not found.")
     if user.role != UserRole.ADMIN and not has_hospital_membership(db, user.id, request.hospital_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Hospital membership is required.")
-    return response_sync.summarize(db, request, response_sync.fetch_notifications(request_id))
+    summary = response_sync.summarize(db, request, response_sync.fetch_notifications(request_id))
+    order_status.name_sources(summary["responses"])
+    summary["accepted"] = [row for row in summary["responses"] if row["response_status"] in response_sync.POSITIVE]
+    return summary
+
+
+@router.get("/blood-requests/{request_id}/order", tags=["Blood Requests"])
+def request_order(request_id: int, db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
+    """The placed order: who confirmed, how many units, and the estimated arrival time at the hospital."""
+    request = db.query(BloodRequest).filter(BloodRequest.request_id == request_id).first()
+    if request is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Blood request not found.")
+    if user.role != UserRole.ADMIN and not has_hospital_membership(db, user.id, request.hospital_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Hospital membership is required.")
+    summary = response_sync.summarize(db, request, response_sync.fetch_notifications(request_id))
+    return order_status.build_order(db, request, summary)
 
 
 @router.get("/hospital-alerts", tags=["Hospital Alerts"])

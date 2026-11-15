@@ -1,6 +1,7 @@
 """Pydantic schemas for BloodRequest creation, status updates, and responses."""
 
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import BloodGroup, UrgencyLevel, RequestStatus
 
@@ -29,5 +30,6 @@ class BloodRequestResponse(BaseModel):
     urgency: UrgencyLevel = Field(..., description="Urgency classification")
     status: RequestStatus = Field(..., description="Current request status")
     created_at: datetime = Field(..., description="Timestamp when request was registered")
+    order_placed_at: Optional[datetime] = Field(default=None, description="When the hospital confirmed the booking (Place Order)")
 
     model_config = ConfigDict(from_attributes=True)

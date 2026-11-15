@@ -89,7 +89,13 @@ def resolve_hospital_by_location(
     )
     if len(address_matches) == 1:
         return address_matches[0], address_matches
-    return None, address_matches
+
+    # Word-by-word match ("manipal old airport road", "narayana hrudayalaya") against names, short names and areas.
+    from app.services.hospital_registry import search_hospitals
+    loose = search_hospitals(db, cleaned)
+    if len(loose) == 1:
+        return loose[0], loose
+    return None, loose or address_matches
 
 
 def calculate_priority_score(
