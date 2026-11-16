@@ -2,260 +2,62 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 
-export function Sidebar({ isOpen, onClose }) {
+const GRAFANA = import.meta.env.VITE_GRAFANA_URL || "http://localhost:3001";
+const JAEGER = import.meta.env.VITE_JAEGER_URL || "http://localhost:16686";
+const PROMETHEUS = import.meta.env.VITE_PROMETHEUS_URL || "http://localhost:9090";
+
+const ROLE_LABEL = {
+  HOSPITAL_STAFF: "Hospital Staff", BLOOD_BANK_STAFF: "Blood Bank Staff", USER: "Donor Portal", ADMIN: "Admin Console",
+};
+
+const MENU = {
+  HOSPITAL_STAFF: [
+    ["/dashboard", "▦", "Dashboard", true], ["/blood-requests/new", "🩸", "Blood Request"], ["/blood-requests", "📋", "Request Details", true],
+    ["/pharmacy", "💊", "Pharmacy & Medicine"], ["/notifications", "🔔", "Notifications", false, "alerts"], ["/profile", "👤", "Profile"],
+  ],
+  BLOOD_BANK_STAFF: [
+    ["/bank", "▦", "Dashboard", true], ["/bank/inventory", "🧊", "Inventory"], ["/bank/requests", "📋", "Blood Requests", false, "requests"],
+    ["/bank/donations", "🤝", "Donations"], ["/pharmacy", "💊", "Pharmacy"], ["/profile", "👤", "Profile"],
+  ],
+  USER: [
+    ["/donor", "▦", "Dashboard", true], ["/donor/notifications", "🔔", "Notifications", false, "requests"],
+    ["/donor/history", "🕘", "Donation History"], ["/profile", "👤", "Profile"],
+  ],
+  ADMIN: [
+    ["/admin", "▦", "Dashboard", true], ["/blood-requests", "📋", "Blood Requests", true], ["/admin/memberships", "🏥", "Hospitals & Banks"],
+    ["/admin/users", "👥", "Users & Roles"], ["/admin/audit-logs", "📜", "System Logs"], ["/admin/agents", "🤖", "Agent Console"],
+    ["/blood-requests/new", "🩸", "Raise Request"],
+  ],
+};
+
+export function Sidebar({ isOpen, onClose, badges = {} }) {
   const { user } = useAuth();
   const role = user?.role || "USER";
-  const isHospitalStaff = role === "HOSPITAL_STAFF" || role === "ADMIN";
-  const isAdmin = role === "ADMIN";
-
-  const navLinkStyle = ({ isActive }) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: "0.75rem",
-    padding: "0.6rem 0.85rem",
-    borderRadius: "var(--radius-md)",
-    fontSize: "0.875rem",
-    fontWeight: isActive ? 600 : 500,
-    color: isActive ? "var(--color-primary)" : "var(--color-text-secondary)",
-    backgroundColor: isActive ? "var(--color-primary-subtle)" : "transparent",
-    textDecoration: "none",
-    transition: "background-color 150ms ease",
-    marginBottom: "0.25rem",
-  });
-
-  const telemetry = [
-    ["Grafana Dashboards", "📈", (import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3001'), "grafana"],
-    ["Jaeger Traces", "🔍", (import.meta.env.VITE_JAEGER_URL || 'http://localhost:16686'), "jaeger"],
-    ["Prometheus Status", "📊", (import.meta.env.VITE_PROMETHEUS_URL || 'http://localhost:9090'), "prometheus"],
-  ];
-
+  const items = MENU[role] || MENU.USER;
+  const link = ([to, icon, label, end, badge]) => (
+    <NavLink key={to + label} to={to} end={Boolean(end)} onClick={onClose} className={({ isActive }) => `bc-nav${isActive ? " active" : ""}`}>
+      <span className="ico" aria-hidden="true">{icon}</span><span>{label}</span>
+      {badge && badges[badge] > 0 && <span className="bc-badge">{badges[badge]}</span>}
+    </NavLink>
+  );
+  const ext = (href, icon, label) => (
+    <a key={label} href={href} target="_blank" rel="noreferrer" className="bc-nav"><span className="ico" aria-hidden="true">{icon}</span><span>{label} ↗</span></a>
+  );
   return (
-    <>
-      {isOpen && (
-        <button
-          type="button"
-          className="mobile-backdrop"
-          aria-label="Close navigation"
-          onClick={onClose}
-        />
+    <aside id="app-sidebar" className={`bc-side sidebar ${isOpen ? "open" : "collapsed"}`} aria-label="Primary navigation">
+      <span className="bc-brand"><span aria-hidden="true">🩸</span><span>Blood<b>Connect</b></span></span>
+      <div className="bc-role">{ROLE_LABEL[role] || "Member"}</div>
+      {items.map(link)}
+      {role === "ADMIN" && (
+        <>
+          <div className="bc-group">Operations Telemetry</div>
+          {ext(GRAFANA, "📈", "Grafana Dashboards")}
+          {ext(JAEGER, "🔍", "Jaeger Traces")}
+          {ext(PROMETHEUS, "📊", "Prometheus Status")}
+        </>
       )}
-
-      <aside
-        id="app-sidebar"
-        className={`sidebar ${isOpen ? "open" : "collapsed"}`}
-        aria-label="Primary navigation"
-        style={{
-          width: "240px",
-          backgroundColor: "var(--color-surface)",
-          borderRight: "1px solid var(--color-border)",
-          padding: "1.25rem 0.85rem",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          flexShrink: 0,
-          overflow: "hidden",
-          transition: "width 200ms ease-in-out, padding 200ms ease-in-out",
-        }}
-      >
-        <div>
-          <div style={{ marginBottom: "1.5rem" }}>
-            <p
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-text-muted)",
-                paddingLeft: "0.85rem",
-                marginBottom: "0.5rem",
-                fontWeight: 600,
-              }}
-            >
-              Operations
-            </p>
-
-            {role === "USER" && (
-              <NavLink to="/donor" style={navLinkStyle} onClick={onClose} end>
-                <span>🩸</span><span>My Blood Alerts</span>
-              </NavLink>
-            )}
-            {role === "BLOOD_BANK_STAFF" && (
-              <NavLink to="/bank" style={navLinkStyle} onClick={onClose} end>
-                <span>🏦</span><span>Inventory & Requests</span>
-              </NavLink>
-            )}
-            {(isHospitalStaff) && (
-              <NavLink to="/dashboard" style={navLinkStyle} onClick={onClose} end>
-                <span>📊</span><span>Dashboard</span>
-              </NavLink>
-            )}
-
-            {isHospitalStaff && (
-              <NavLink to="/pharmacy" style={navLinkStyle} onClick={onClose}>
-                <span>💊</span><span>Pharmacy & Medicine</span>
-              </NavLink>
-            )}
-
-            {isHospitalStaff && (
-              <>
-                <NavLink to="/blood-requests" style={navLinkStyle} onClick={onClose} end>
-                  <span>📋</span><span>Blood Requests</span>
-                </NavLink>
-                <NavLink to="/blood-requests/new" style={navLinkStyle} onClick={onClose}>
-                  <span>🩸</span><span>Request Blood</span>
-                </NavLink>
-                <NavLink to="/notifications" style={navLinkStyle} onClick={onClose}>
-                  <span>🔔</span><span>Notifications</span>
-                </NavLink>
-              </>
-            )}
-
-            <NavLink to="/profile" style={navLinkStyle} onClick={onClose}>
-              <span>👤</span><span>Profile</span>
-            </NavLink>
-          </div>
-
-          {isAdmin && (
-            <div style={{ marginBottom: "1.5rem" }}>
-              <p
-                style={{
-                  fontSize: "0.75rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--color-text-muted)",
-                  paddingLeft: "0.85rem",
-                  marginBottom: "0.5rem",
-                  fontWeight: 600,
-                }}
-              >
-                Administration
-              </p>
-
-              <NavLink to="/admin" style={navLinkStyle} onClick={onClose} end>
-                <span>⚙️</span><span>Admin Overview</span>
-              </NavLink>
-              <NavLink to="/admin/users" style={navLinkStyle} onClick={onClose}>
-                <span>👥</span><span>User Management</span>
-              </NavLink>
-              <NavLink to="/admin/memberships" style={navLinkStyle} onClick={onClose}>
-                <span>🏥</span><span>Memberships</span>
-              </NavLink>
-              <NavLink to="/admin/audit-logs" style={navLinkStyle} onClick={onClose}>
-                <span>📜</span><span>Audit Logs</span>
-              </NavLink>
-
-              <p
-                style={{
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--color-text-muted)",
-                  paddingLeft: "0.85rem",
-                  marginTop: "1.25rem",
-                  marginBottom: "0.5rem",
-                  fontWeight: 600,
-                }}
-              >
-                Operations Telemetry
-              </p>
-
-              {telemetry.map(([label, icon, href, view]) =>
-                href ? (
-                  <a
-                    key={label}
-                    href={href}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
-                  >
-                    <span>{icon}</span><span>{label} ↗</span>
-                  </a>
-                ) : (
-                  <NavLink
-                    key={label}
-                    to={`/admin?view=${view}`}
-                    onClick={onClose}
-                    style={{ ...navLinkStyle({ isActive: false }), fontSize: "0.8rem" }}
-                  >
-                    <span>{icon}</span><span>{label}</span>
-                  </NavLink>
-                )
-              )}
-            </div>
-          )}
-        </div>
-
-        {isAdmin && (
-          <div
-            style={{
-              padding: "0.75rem",
-              backgroundColor: "var(--color-bg)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid var(--color-border)",
-              fontSize: "0.75rem",
-              color: "var(--color-text-muted)",
-            }}
-          >
-            <p style={{ fontWeight: 600, color: "var(--color-text-secondary)" }}>
-              Agent Network
-            </p>
-            <p>A2A · MCP · System Operations</p>
-          </div>
-        )}
-      </aside>
-
-      <style>{`
-        .mobile-backdrop {
-          display: none;
-        }
-
-        @media (max-width: 768px) {
-          .mobile-backdrop {
-            display: block;
-            position: fixed;
-            inset: 57px 0 0 0;
-            width: 100%;
-            height: calc(100vh - 57px);
-            border: 0;
-            padding: 0;
-            margin: 0;
-            background: rgba(15, 23, 42, 0.4);
-            z-index: 40;
-            cursor: pointer;
-          }
-
-          .sidebar {
-            position: fixed !important;
-            top: 57px;
-            bottom: 0;
-            left: 0;
-            width: 240px !important;
-            padding: 1.25rem 0.85rem !important;
-            transform: translateX(-100%);
-            transition: transform 200ms ease-in-out;
-            z-index: 45;
-            overflow-y: auto !important;
-            overflow-x: hidden;
-          }
-
-          .sidebar.open {
-            transform: translateX(0);
-          }
-
-          .sidebar.collapsed {
-            transform: translateX(-100%);
-          }
-        }
-
-        @media (min-width: 769px) {
-          .sidebar.collapsed {
-            width: 0 !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-            border-right-width: 0 !important;
-          }
-        }
-      `}</style>
-    </>
+      {isOpen && <button type="button" className="mobile-backdrop" aria-label="Close navigation" onClick={onClose} style={{ display: "none" }} />}
+    </aside>
   );
 }
 

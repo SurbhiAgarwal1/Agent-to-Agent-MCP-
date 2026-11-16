@@ -3,7 +3,9 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
 import { homeForRole } from '../utils/roles';
 import DonorDashboardPage from '../pages/DonorDashboardPage.jsx';
-import BloodBankDashboardPage from '../pages/BloodBankDashboardPage.jsx';
+import BloodBankDashboardPage, { BankInventoryPage, BankRequestsPage, BankDonationsPage } from '../pages/BloodBankDashboardPage.jsx';
+import { DonorNotificationsPage, DonorHistoryPage } from '../pages/DonorDashboardPage.jsx';
+import AdminHomePage from '../pages/AdminHomePage.jsx';
 
 import ProtectedRoute from './ProtectedRoute.jsx';
 import RoleRoute from './RoleRoute.jsx';
@@ -48,7 +50,12 @@ export default function AppRoutes() {
       >
         <Route path="/dashboard" element={<DashboardGate />} />
         <Route path="/donor" element={<RoleRoute allowedRoles={['USER']}><DonorDashboardPage /></RoleRoute>} />
+        <Route path="/donor/notifications" element={<RoleRoute allowedRoles={['USER']}><DonorNotificationsPage /></RoleRoute>} />
+        <Route path="/donor/history" element={<RoleRoute allowedRoles={['USER']}><DonorHistoryPage /></RoleRoute>} />
         <Route path="/bank" element={<RoleRoute allowedRoles={['BLOOD_BANK_STAFF']}><BloodBankDashboardPage /></RoleRoute>} />
+        <Route path="/bank/inventory" element={<RoleRoute allowedRoles={['BLOOD_BANK_STAFF']}><BankInventoryPage /></RoleRoute>} />
+        <Route path="/bank/requests" element={<RoleRoute allowedRoles={['BLOOD_BANK_STAFF']}><BankRequestsPage /></RoleRoute>} />
+        <Route path="/bank/donations" element={<RoleRoute allowedRoles={['BLOOD_BANK_STAFF']}><BankDonationsPage /></RoleRoute>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/pharmacy" element={<PharmacyCatalogPage />} />
@@ -82,6 +89,14 @@ export default function AppRoutes() {
         {/* Admin Console & Governance */}
         <Route
           path="/admin"
+          element={
+            <RoleRoute allowedRoles={['ADMIN']}>
+              <AdminHomePage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/admin/agents"
           element={
             <RoleRoute allowedRoles={['ADMIN']}>
               <AdminDashboardPage />

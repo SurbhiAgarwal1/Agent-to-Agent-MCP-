@@ -228,3 +228,11 @@ def test_alert_donors_then_donor_accepts_then_hospital_confirms_delivery(client,
     done = client.post(f"/api/v1/blood-requests/{rid}/confirm-delivery", headers=staff)
     assert done.status_code == 200 and done.json()["stage"] == "delivered"
     assert db_session.query(BloodRequest).filter(BloodRequest.request_id == rid).one().status == "FULFILLED"
+
+
+def test_stock_edit_targets_the_chosen_component(client, world):
+    h = _signup(client, email="comp@bank.test", password="secret12", role="BLOOD_BANK_STAFF", organization_name="Component Bank", latitude=1, longitude=1, initial_stock={"B+": 5})
+    r = client.put("/api/v1/portal/bank/inventory/B+", headers=h, json={"available_units": 9, "component_type": "whole_blood"})
+    assert r.status_code == 200, r.text
+    rows = {(i["blood_group"], i["component_type"]): i["available_units"] for i in client.get("/api/v1/portal/bank/inventory", headers=h).json()["items"]}
+    assert rows[("B+", "whole_blood")] == 9 and rows[("B+", "packed_red_blood_cells")] == 5

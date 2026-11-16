@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './styles/variables.css';
 import './styles/globals.css';
+import './styles/bloodconnect.css';
 
 const rootElement = document.getElementById('root');
 

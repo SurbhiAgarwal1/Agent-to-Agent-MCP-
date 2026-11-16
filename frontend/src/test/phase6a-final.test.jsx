@@ -30,6 +30,7 @@ vi.mock('../api/bloodRequests.js', () => ({
 
 describe('Phase 6A final frontend behavior', () => {
   beforeEach(() => {
+    window.innerWidth = 600; // phone width: the menu starts closed
     authState.user = { role: 'HOSPITAL_STAFF', email: 'staff@example.com' };
     mockProcessNlRequest.mockReset();
     mockProcessNlRequest.mockResolvedValue({

@@ -297,4 +297,11 @@ def answer_donor_notification(notification_id:int,response:str=Query(pattern="^(
     require_service_token(authorization)
     row=db.get(DonorNotification,notification_id)
     if not row or row.donor_id!=donor_id:raise HTTPException(404,"Notification not found")
-    return _record_donor_response(row,None,response,db,trusted=True)
+    try:
+        return _record_donor_response(row,None,response,db,trusted=True)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        import logging; logging.getLogger(__name__).exception("donor answer failed")
+        raise HTTPException(500,f"Could not record the answer ({type(exc).__name__}: {str(exc)[:200]})")

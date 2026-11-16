@@ -57,9 +57,9 @@ export default function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-shell" aria-labelledby="login-title">
-        <Link to="/" className="auth-brand" aria-label="Blood Coordination home">
+        <Link to="/" className="auth-brand" aria-label="BloodConnect home">
           <span className="auth-brand-mark">+</span>
-          <span>Blood Coordination</span>
+          <span>BloodConnect</span>
         </Link>
 
         <div className="auth-heading">

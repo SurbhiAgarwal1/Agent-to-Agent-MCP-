@@ -85,6 +85,7 @@ def donor_availability(body: Availability, db: Session = Depends(get_db), user: 
 class StockBody(BaseModel):
     available_units: int = Field(ge=0, le=10000)
     expiry_date: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    component_type: str = Field(default="packed_red_blood_cells", pattern="^(whole_blood|packed_red_blood_cells)$")
 
 
 class BankAnswer(BaseModel):
@@ -109,7 +110,7 @@ def bank_inventory(db: Session = Depends(get_db), user: User = Depends(get_curre
 @router.put("/bank/inventory/{blood_group}")
 def bank_set_stock(blood_group: str, body: StockBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     bank_id = _link(db, user, "blood_bank")
-    payload = {"available_units": body.available_units}
+    payload = {"available_units": body.available_units, "component_type": body.component_type}
     if body.expiry_date:
         payload["expiry_date"] = body.expiry_date
     return ps.call("PUT", f"{ps.bank_url()}/api/v1/blood-banks/{bank_id}/stock/{blood_group.upper()}", json=payload)

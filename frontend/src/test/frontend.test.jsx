@@ -389,7 +389,7 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
     expect(screen.getByText(/Operational Dashboard/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByText('#101')).toBeInTheDocument();
-      expect(screen.getByText('O+')).toBeInTheDocument();
+      expect(screen.getAllByText('O+').length).toBeGreaterThan(0);
     });
   });
 

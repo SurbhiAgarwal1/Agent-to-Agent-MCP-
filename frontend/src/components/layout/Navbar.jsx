@@ -1,76 +1,29 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
-import { Button } from "../common/Button.jsx";
 
-export function Navbar({ onToggleSidebar, isSidebarOpen = false }) {
+const BELL_TARGET = { HOSPITAL_STAFF: "/notifications", ADMIN: "/notifications", USER: "/donor/notifications", BLOOD_BANK_STAFF: "/bank/requests" };
+
+export function Navbar({ onToggleSidebar, isSidebarOpen = false, bell = 0 }) {
   const { user, logout } = useAuth();
-  const isHospitalStaff = user?.role === "HOSPITAL_STAFF" || user?.role === "ADMIN";
-
+  const initial = (user?.email || "?").charAt(0).toUpperCase();
   return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0.75rem 1.5rem",
-        backgroundColor: "var(--color-surface)",
-        borderBottom: "1px solid var(--color-border)",
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-        {onToggleSidebar && (
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
-            aria-expanded={isSidebarOpen}
-            aria-controls="app-sidebar"
-            style={{
-              padding: "0.4rem",
-              borderRadius: "var(--radius-sm)",
-              color: "var(--color-text-secondary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            ☰
-          </button>
-        )}
-        <Link
-          to={user?.role === "USER" ? "/donor" : user?.role === "BLOOD_BANK_STAFF" ? "/bank" : "/dashboard"}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            textDecoration: "none",
-            color: "var(--color-text-primary)",
-            fontWeight: 700,
-            fontSize: "1.125rem",
-          }}
-        >
-          <span style={{ fontSize: "1.25rem" }}>🩸</span>
-          <span>Blood Coordination Platform</span>
-        </Link>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-        {user && (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem" }}>
-            <span style={{ color: "var(--color-text-secondary)", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {user.email}
-            </span>
-            <span className="role-chip">{user.role?.replace("_", " ")}</span>
-          </div>
-        )}
-        <Button variant="secondary" size="sm" onClick={logout}>
-          Log out
-        </Button>
-      </div>
+    <header className="bc-top">
+      {onToggleSidebar && (
+        <button type="button" onClick={onToggleSidebar} aria-label={isSidebarOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={isSidebarOpen} aria-controls="app-sidebar" style={{ background: "none", border: 0, fontSize: "1.2rem", cursor: "pointer" }}>☰</button>
+      )}
+      <span className="spacer" />
+      <Link to={BELL_TARGET[user?.role] || "/dashboard"} className="bc-bell" aria-label="Notifications">
+        🔔{bell > 0 && <span className="dot">{bell}</span>}
+      </Link>
+      {user && (
+        <div className="bc-user">
+          <span className="bc-avatar" aria-hidden="true">{initial}</span>
+          <span>{user.email}<small>{user.role?.replaceAll("_", " ")}</small></span>
+        </div>
+      )}
+      <button type="button" className="bc-btn ghost sm" onClick={logout}>Log out</button>
     </header>
   );
 }

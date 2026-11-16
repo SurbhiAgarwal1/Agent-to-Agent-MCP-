@@ -360,6 +360,7 @@ def create_blood_bank(payload:BankCreate,authorization:Optional[str]=Header(defa
 class StockSet(BaseModel):
     available_units:int=Field(ge=0,le=10000)
     expiry_date:Optional[_date]=None
+    component_type:str=Field(default="packed_red_blood_cells",pattern="^(whole_blood|packed_red_blood_cells)$")
 
 @app.put("/api/v1/blood-banks/{blood_bank_id}/stock/{blood_group}",response_model=InventoryResponse)
 def set_stock(blood_bank_id:int,blood_group:str,payload:StockSet,authorization:Optional[str]=Header(default=None),db:Session=Depends(get_db)):
@@ -368,9 +369,9 @@ def set_stock(blood_bank_id:int,blood_group:str,payload:StockSet,authorization:O
     g=blood_group.upper()
     if g not in _GROUPS: raise HTTPException(422,"Unsupported blood group")
     if not db.get(BloodBank,blood_bank_id): raise HTTPException(404,"Blood bank not found")
-    row=db.query(BloodInventory).filter_by(blood_bank_id=blood_bank_id,blood_group=g,component_type="packed_red_blood_cells").first()
+    row=db.query(BloodInventory).filter_by(blood_bank_id=blood_bank_id,blood_group=g,component_type=payload.component_type).first()
     if not row:
-        row=BloodInventory(blood_bank_id=blood_bank_id,blood_group=g,component_type="packed_red_blood_cells",available_units=0,reserved_units=0,expiry_date=_date.today()+timedelta(days=35),availability_status="out_of_stock");db.add(row)
+        row=BloodInventory(blood_bank_id=blood_bank_id,blood_group=g,component_type=payload.component_type,available_units=0,reserved_units=0,expiry_date=_date.today()+timedelta(days=35),availability_status="out_of_stock");db.add(row)
     row.available_units=payload.available_units
     if row.reserved_units>row.available_units: row.reserved_units=row.available_units
     if payload.expiry_date: row.expiry_date=payload.expiry_date
@@ -384,4 +385,11 @@ def answer_blood_bank_notification(notification_id:int,payload:BankNotificationR
     require_service_token(authorization)
     row=db.get(BloodBankNotification,notification_id)
     if not row or row.blood_bank_id!=blood_bank_id: raise HTTPException(404,"Notification not found")
-    return _record_bank_response(row,None,payload,db,trusted=True)
+    try:
+        return _record_bank_response(row,None,payload,db,trusted=True)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        import logging; logging.getLogger(__name__).exception("blood bank answer failed")
+        raise HTTPException(500,f"Could not record the answer ({type(exc).__name__}: {str(exc)[:200]})")

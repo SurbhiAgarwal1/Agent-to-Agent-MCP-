@@ -11,8 +11,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../api/portal', () => api);
 
-import DonorDashboardPage from '../pages/DonorDashboardPage.jsx';
-import BloodBankDashboardPage from '../pages/BloodBankDashboardPage.jsx';
+import { DonorNotificationsPage } from '../pages/DonorDashboardPage.jsx';
+import { BankRequestsPage } from '../pages/BloodBankDashboardPage.jsx';
 import ResponsesPanel from '../components/coordination/ResponsesPanel.jsx';
 
 beforeEach(() => vi.clearAllMocks());
@@ -22,9 +22,9 @@ describe('portal pages', () => {
     api.getPortalMe.mockResolvedValue({ kind: 'donor', profile: { name: 'Asha', blood_group: 'B+', city: 'Pune', available: true, donation_count: 2 } });
     api.listDonorNotifications.mockResolvedValue({ items: [{ id: 7, blood_request_id: 3, blood_group: 'B+', units_needed: 2, hospital_name: 'City Hospital', response_status: 'pending' }] });
     api.respondDonorNotification.mockResolvedValue({});
-    render(<MemoryRouter><DonorDashboardPage /></MemoryRouter>);
+    render(<MemoryRouter><DonorNotificationsPage /></MemoryRouter>);
     await screen.findByText('City Hospital');
-    fireEvent.click(screen.getByText('Accept'));
+    fireEvent.click(screen.getByText('I Can Donate'));
     await waitFor(() => expect(api.respondDonorNotification).toHaveBeenCalledWith(7, 'accepted'));
   });
 
@@ -32,8 +32,8 @@ describe('portal pages', () => {
     api.getBankInventory.mockResolvedValue({ bank: { name: 'Red Bank' }, items: [{ blood_group: 'O+', component_type: 'packed_red_blood_cells', available_units: 4, reserved_units: 0 }] });
     api.listBankNotifications.mockResolvedValue({ items: [{ id: 9, blood_request_id: 5, blood_group: 'O+', inventory_blood_group: 'O+', required_units: 2, in_stock_units: 4, response_status: 'pending', hospital_name: 'City Hospital' }] });
     api.respondBankNotification.mockRejectedValue(new Error('Not enough stock'));
-    render(<MemoryRouter><BloodBankDashboardPage /></MemoryRouter>);
-    await screen.findByText('Red Bank');
+    render(<MemoryRouter><BankRequestsPage /></MemoryRouter>);
+    await screen.findByText('City Hospital');
     fireEvent.click(screen.getByText('Accept'));
     await waitFor(() => expect(api.respondBankNotification).toHaveBeenCalledWith(9, { response_status: 'accepted', confirmed_available_units: 2 }));
     await screen.findByText('Not enough stock');
