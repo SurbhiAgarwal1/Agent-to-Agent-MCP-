@@ -172,8 +172,8 @@ def _record_bank_response(row, token, payload, db, trusted=False):
         BloodBankNotification.response_at:now,
         BloodBankNotification.confirmed_available_units:payload.confirmed_available_units,
         BloodBankNotification.rejection_reason:payload.rejection_reason,
-        BloodBankNotification.response_token_hash:None,
-        BloodBankNotification.response_token_expires_at:None,
+        BloodBankNotification.response_token_hash:"",  # used up (older databases declared this column NOT NULL)
+        BloodBankNotification.response_token_expires_at:now,
     },synchronize_session=False)
     if changed!=1:
         db.rollback()

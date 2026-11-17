@@ -47,7 +47,13 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Donors must choose a blood group (A+, A-, B+, B-, AB+, AB-, O+, O-).")
         if payload.latitude is None or payload.longitude is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Donors must share their location (latitude and longitude).")
-        donor_id = party_service.create_donor(
+        donor_id = party_service.find_donor_by_name(payload.name or "") if payload.name else None
+        if donor_id is not None:
+            if db.query(PartyLink).filter(PartyLink.kind == "donor", PartyLink.external_id == donor_id).first():
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="This donor already has an account. Log in instead, or use a different name.")
+            # the name matches a listed donor: link this login to that donor so their requests reach this account
+        else:
+          donor_id = party_service.create_donor(
             name=(payload.name or payload.email.split("@")[0])[:120], age=payload.age or 25, blood_group=group,
             city=payload.city or "Unknown", district=payload.district or payload.city or "Unknown",
             state=payload.state or "Unknown", pin_code=payload.pin_code or "000000",

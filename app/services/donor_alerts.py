@@ -7,18 +7,26 @@ from app.services import party_service as ps
 from app.services.compatibility import get_compatible_donor_groups
 
 
-def alert_donors(db, request: BloodRequest, *, limit: int = 10, radius_km: float = 30) -> dict:
-    hospital = db.get(Hospital, request.hospital_id)
-    if hospital is None or hospital.latitude is None or hospital.longitude is None:
-        raise HTTPException(422, "The hospital has no location, so nearby donors cannot be found.")
+def candidates(db, request: BloodRequest, hospital, radius_km: float, limit: int) -> list[dict]:
+    """Compatible, available donors near the hospital. Donors who have a login come first (their dashboard can answer), then nearest."""
+    from app.models.party_link import PartyLink
+    registered = {l.external_id for l in db.query(PartyLink).filter(PartyLink.kind == "donor").all()}
     found: dict[int, dict] = {}
     for group in get_compatible_donor_groups(request.blood_group):
         data = ps.call("GET", ps.donor_url() + "/api/v1/donors/nearby", params={
             "latitude": hospital.latitude, "longitude": hospital.longitude, "radius_km": radius_km,
-            "blood_group": group, "available": True, "limit": limit})
+            "blood_group": group, "available": True, "limit": 200})
         for d in data.get("items", []):
+            d["has_login"] = int(d["id"]) in registered
             found.setdefault(int(d["id"]), d)
-    ranked = sorted(found.values(), key=lambda d: d.get("distance_km") or 0)[:limit]
+    return sorted(found.values(), key=lambda d: (not d["has_login"], d.get("distance_km") or 0))[:limit]
+
+
+def alert_donors(db, request: BloodRequest, *, limit: int = 10, radius_km: float = 50) -> dict:
+    hospital = db.get(Hospital, request.hospital_id)
+    if hospital is None or hospital.latitude is None or hospital.longitude is None:
+        raise HTTPException(422, "The hospital has no location, so nearby donors cannot be found.")
+    ranked = candidates(db, request, hospital, radius_km, limit)
     sent = 0
     for d in ranked:
         try:

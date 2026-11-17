@@ -65,3 +65,9 @@ def find_bank_by_name(name: str) -> int | None:
     """Id of the listed blood bank with exactly this name (case-insensitive), if any."""
     items = call("GET", bank_url() + "/api/v1/blood-banks", params={"name": name.strip(), "limit": 1}).get("items") or []
     return int(items[0]["id"]) if items else None
+
+
+def find_donor_by_name(name: str) -> int | None:
+    """Id of the listed donor with exactly this name (case-insensitive), if any."""
+    items = call("GET", donor_url() + "/api/v1/donors", params={"name": name.strip(), "limit": 1}).get("items") or []
+    return int(items[0]["id"]) if items else None

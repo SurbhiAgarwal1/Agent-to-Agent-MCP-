@@ -128,7 +128,7 @@ def test_blood_bank_notification_is_idempotent_and_requires_response_token(tmp_p
     assert delivered["delivery_status"]=="delivered" and delivered["response_status"]=="pending"
     accepted=bank_api._record_bank_response(notification,token,bank_api.BankNotificationResponseInput(response_status="accepted",confirmed_available_units=2),db)
     assert accepted["delivery_status"]=="delivered" and accepted["response_status"]=="accepted"
-    assert notification.response_token_hash is None and notification.response_token_expires_at is None
+    assert not notification.response_token_hash and (notification.response_token_expires_at is None or delivery.response_token_expired(notification.response_token_expires_at))
     with pytest.raises(HTTPException) as reused:
         bank_api._record_bank_response(notification,token,bank_api.BankNotificationResponseInput(response_status="accepted",confirmed_available_units=2),db)
     assert reused.value.status_code==409
@@ -138,7 +138,7 @@ def test_blood_bank_notification_is_idempotent_and_requires_response_token(tmp_p
     reject_row=db.query(bank_api.BloodBankNotification).filter_by(idempotency_key=rejected_data.idempotency_key).one()
     reject_token=re.search(r"token=([^\s]+)",sent[1]).group(1)
     bank_api._record_bank_response(reject_row,reject_token,bank_api.BankNotificationResponseInput(response_status="rejected",rejection_reason="Stock no longer available"),db)
-    assert reject_row.response_status=="rejected" and reject_row.response_token_hash is None
+    assert reject_row.response_status=="rejected" and not reject_row.response_token_hash
 
     expired_data=data.model_copy(update={"idempotency_key":"request-7-bank-expired"})
     bank_api.send_blood_bank_notification(expired_data,db)
@@ -153,7 +153,7 @@ def test_blood_bank_notification_is_idempotent_and_requires_response_token(tmp_p
     assert invalid.value.status_code==403
     db.close();db=factory()
     persisted=db.query(bank_api.BloodBankNotification).filter_by(id=notification.id).one()
-    assert persisted.delivery_status=="delivered" and persisted.response_status=="accepted" and persisted.response_token_hash is None
+    assert persisted.delivery_status=="delivered" and persisted.response_status=="accepted" and not persisted.response_token_hash
     db.close();engine.dispose()
 
 
@@ -179,7 +179,7 @@ def test_donor_notification_full_lifecycle_and_consent(tmp_path,monkeypatch):
     assert delivered["delivery_status"]=="delivered" and delivered["response_status"]=="pending"
     accepted=donor_api._record_donor_response(notification,token,"accepted",db)
     assert accepted["delivery_status"]=="delivered" and accepted["response_status"]=="accepted"
-    assert notification.response_token_hash is None and notification.response_token_expires_at is None
+    assert not notification.response_token_hash and (notification.response_token_expires_at is None or delivery.response_token_expired(notification.response_token_expires_at))
     with pytest.raises(HTTPException) as reused:
         donor_api._record_donor_response(notification,token,"declined",db)
     assert reused.value.status_code==409
@@ -189,7 +189,7 @@ def test_donor_notification_full_lifecycle_and_consent(tmp_path,monkeypatch):
     rejected_row=db.query(donor_api.DonorNotification).filter_by(idempotency_key=rejected_data.idempotency_key).one()
     reject_token=re.search(r"token=([^\s]+)",sent[1]).group(1)
     donor_api._record_donor_response(rejected_row,reject_token,"declined",db)
-    assert rejected_row.response_status=="declined" and rejected_row.response_token_hash is None
+    assert rejected_row.response_status=="declined" and not rejected_row.response_token_hash
 
     expired_data=data.model_copy(update={"idempotency_key":"donor-request-5-expired"})
     donor_api.send_donor_notification(expired_data,db)
@@ -210,5 +210,5 @@ def test_donor_notification_full_lifecycle_and_consent(tmp_path,monkeypatch):
     assert len(sent)==3
     db.close();db=factory()
     persisted=db.query(donor_api.DonorNotification).filter_by(id=notification.id).one()
-    assert persisted.delivery_status=="delivered" and persisted.response_status=="accepted" and persisted.response_token_hash is None
+    assert persisted.delivery_status=="delivered" and persisted.response_status=="accepted" and not persisted.response_token_hash
     db.close();engine.dispose()

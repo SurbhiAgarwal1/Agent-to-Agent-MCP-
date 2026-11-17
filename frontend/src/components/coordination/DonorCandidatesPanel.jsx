@@ -50,7 +50,7 @@ export default function DonorCandidatesPanel({ requestId, disabled }) {
                 <tr key={d.donor_id}>
                   <td>{d.state === 'not_notified' && !disabled && (
                     <input type="checkbox" aria-label={`Select ${d.name}`} checked={Boolean(picked[d.donor_id])} onChange={(e) => setPicked((p) => ({ ...p, [d.donor_id]: e.target.checked }))} />)}</td>
-                  <td><strong>{d.name}</strong><br /><small>{d.city}</small></td>
+                  <td><strong>{d.name}</strong>{d.has_login && <span className="bc-pill bc-p-blue" style={{ marginLeft: 6 }}>Has account</span>}<br /><small>{d.city}</small></td>
                   <td>{d.blood_group}</td>
                   <td>{d.distance_km != null ? `${Number(d.distance_km).toFixed(1)} km` : '—'}</td>
                   <td>{d.eta_minutes != null ? `~${d.eta_minutes} min` : '—'}</td>

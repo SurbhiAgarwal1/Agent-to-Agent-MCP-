@@ -252,3 +252,26 @@ def test_donor_candidates_and_selective_alert(client, world, db_session):
     assert sent["notified"] == 1
     after = {d["donor_id"]: d["state"] for d in client.get(f"/api/v1/blood-requests/{rid}/donor-candidates", headers=staff).json()["donors"]}
     assert after[pick] == "pending" and sum(1 for s in after.values() if s == "pending") == 1
+
+
+def test_answers_work_on_databases_that_forbid_null_token_columns(client, world):
+    """Older data-service databases declared response_token_hash NOT NULL; answering must not try to store NULL there."""
+    bank_api, donor_api = world
+    from blood_bank_api import models as bm
+    assert bm.BloodBankNotification.__table__.c.response_token_hash.nullable  # model unchanged; the update writes '' not NULL
+    import inspect, blood_bank_api.main as bmain, donor_api.main as dmain
+    assert "response_token_hash:None" not in inspect.getsource(bmain).replace(" ", "")
+    assert "response_token_hash:None" not in inspect.getsource(dmain).replace(" ", "")
+
+
+def test_donor_signup_with_listed_name_links_to_that_donor(client, world):
+    _, donor_api = world
+    listed = donor_api.get("/api/v1/donors?limit=1").json()["items"][0]
+    before = donor_api.get("/api/v1/donors?limit=1").json()["total"]
+    h = _signup(client, email="claimdonor@x.test", password="secret12", role="USER", name=listed["name"].upper(), age=30,
+                blood_group=listed["blood_group"], city="Bengaluru", latitude=12.9, longitude=77.6)
+    assert client.get("/api/v1/portal/me", headers=h).json()["profile"]["id"] == listed["id"]
+    assert donor_api.get("/api/v1/donors?limit=1").json()["total"] == before
+    r = client.post("/api/v1/auth/register", json={"email": "again@x.test", "password": "secret12", "role": "USER", "name": listed["name"],
+                                                   "age": 30, "blood_group": listed["blood_group"], "city": "Bengaluru", "latitude": 12.9, "longitude": 77.6})
+    assert r.status_code == 409

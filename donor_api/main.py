@@ -56,8 +56,8 @@ def _record_donor_response(row, token, response, db, trusted=False):
         DonorNotification.response_at:now,
         DonorNotification.response:{"accepted":"confirmed","declined":"declined","unavailable":"unavailable","no_response":"no_response"}[response],
         DonorNotification.status:"responded" if response=="accepted" else response,
-        DonorNotification.response_token_hash:None,
-        DonorNotification.response_token_expires_at:None,
+        DonorNotification.response_token_hash:"",  # used up (older databases declared this column NOT NULL)
+        DonorNotification.response_token_expires_at:now,
     },synchronize_session=False)
     if changed!=1:
         db.rollback()
@@ -84,11 +84,12 @@ def available_donors(blood_group:Optional[str]=None,city:Optional[str]=None,dist
 
 @app.get("/api/v1/donors/search",response_model=Page[DonorResponse])
 @app.get("/api/v1/donors",response_model=Page[DonorResponse])
-def search_donors(blood_group:Optional[str]=None,city:Optional[str]=None,district:Optional[str]=None,state:Optional[str]=None,available:Optional[bool]=None,verification_status:Optional[str]=None,eligibility_status:Optional[str]=None,notification_consent:Optional[bool]=None,minimum_donation_count:Optional[int]=Query(None,ge=0),limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0),sort_by:str=Query("updated",pattern="^(updated|availability)$"),db:Session=Depends(get_db)):
-    return _list_donors(db,blood_group,city,district,state,available,verification_status,eligibility_status,notification_consent,limit,offset,minimum_donation_count,sort_by)
+def search_donors(blood_group:Optional[str]=None,city:Optional[str]=None,district:Optional[str]=None,state:Optional[str]=None,available:Optional[bool]=None,verification_status:Optional[str]=None,eligibility_status:Optional[str]=None,notification_consent:Optional[bool]=None,minimum_donation_count:Optional[int]=Query(None,ge=0),limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0),sort_by:str=Query("updated",pattern="^(updated|availability)$"),db:Session=Depends(get_db),name:Optional[str]=None):
+    return _list_donors(db,blood_group,city,district,state,available,verification_status,eligibility_status,notification_consent,limit,offset,minimum_donation_count,sort_by,name)
 
-def _list_donors(db,blood_group=None,city=None,district=None,state=None,available=None,verification_status=None,eligibility_status=None,notification_consent=None,limit=50,offset=0,minimum_donation_count=None,sort_by="updated"):
+def _list_donors(db,blood_group=None,city=None,district=None,state=None,available=None,verification_status=None,eligibility_status=None,notification_consent=None,limit=50,offset=0,minimum_donation_count=None,sort_by="updated",name=None):
     q=db.query(Donor)
+    if name:q=q.filter(func.lower(Donor.name)==name.strip().lower())
     if blood_group:q=q.filter(Donor.blood_group==blood_group.upper())
     if city:q=q.filter(func.lower(Donor.city)==city.lower())
     if district:q=q.filter(func.lower(Donor.district)==district.lower())
