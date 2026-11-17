@@ -324,6 +324,18 @@ def orchestrate_blood_request(
     if placed is not None and placed.order_placed_at is None:
         placed.order_placed_at = datetime.now(timezone.utc)
         db.commit()
+    # Blood banks were notified for what they hold; ask the nearest donors for any units still uncovered.
+    try:
+        from app.services import response_sync
+        from app.services.donor_alerts import alert_donors
+        fetched = response_sync.fetch_notifications(request_id)
+        bank_units = sum(int(n.get("required_units") or 0) for n in fetched["banks"])
+        shortfall = (placed.units_required if placed else 0) - bank_units
+        if placed is not None and shortfall > 0:
+            result["donor_alert"] = alert_donors(db, placed, limit=min(25, shortfall))
+    except Exception as exc:  # the order is placed either way; the hospital can alert donors by hand
+        import logging
+        logging.getLogger("app.errors").warning("Automatic donor alert failed: %s", type(exc).__name__)
     return result
 
 

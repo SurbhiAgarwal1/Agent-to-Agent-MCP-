@@ -31,3 +31,7 @@ export const alertNearbyDonors = (requestId) =>
   apiClient.post(`/api/v1/blood-requests/${requestId}/alert-donors`);
 export const confirmDelivery = (requestId) =>
   apiClient.post(`/api/v1/blood-requests/${requestId}/confirm-delivery`);
+
+export const getDonorCandidates = (requestId) => apiClient.get(`/api/v1/blood-requests/${requestId}/donor-candidates`);
+export const alertDonors = (requestId, donorIds) =>
+  apiClient.post(`/api/v1/blood-requests/${requestId}/alert-donors`, donorIds ? { donor_ids: donorIds } : {});

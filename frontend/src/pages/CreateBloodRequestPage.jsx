@@ -4,12 +4,15 @@ import ChatBloodRequest from '../components/blood/ChatBloodRequest';
 import { listHospitals } from '../api/hospitals';
 import { createBloodRequest } from '../api/bloodRequests';
 import { PageHeader, Panel } from '../components/bc';
+import useAuth from '../hooks/useAuth';
+import { getMeApi } from '../api/auth';
 
 const GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const PRIORITY = [['CRITICAL', 'Urgent'], ['HIGH', 'High'], ['MEDIUM', 'Medium'], ['LOW', 'Normal']];
 
 export default function CreateBloodRequestPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [hospitals, setHospitals] = useState([]);
   const [form, setForm] = useState({ hospital_id: '', blood_group: 'O-', component_type: 'packed_red_blood_cells', units_required: 2, urgency: 'HIGH' });
   const [busy, setBusy] = useState(false);
@@ -17,13 +20,17 @@ export default function CreateBloodRequestPage() {
 
   useEffect(() => {
     let alive = true;
-    Promise.resolve(listHospitals()).catch(() => []).then((h) => {
+    (async () => {
+      const h = await Promise.resolve(listHospitals()).catch(() => []);
+      let ids = user?.hospital_ids;
+      if (ids === undefined && user?.role !== 'ADMIN') ids = ((await Promise.resolve(getMeApi()).catch(() => null)) || {}).hospital_ids;
       if (!alive) return;
-      setHospitals(h || []);
-      if (h && h.length) setForm((f) => ({ ...f, hospital_id: String(h[h.length - 1].hospital_id) }));
-    });
+      const mine = user?.role === 'ADMIN' || !(ids || []).length ? (h || []) : (h || []).filter((x) => ids.includes(x.hospital_id));
+      setHospitals(mine);
+      if (mine.length) setForm((f) => ({ ...f, hospital_id: String(mine[mine.length - 1].hospital_id) }));
+    })();
     return () => { alive = false; };
-  }, []);
+  }, [user]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const submit = async (e) => {

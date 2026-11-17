@@ -96,17 +96,10 @@ def _own_request(db: Session, user: User, request_id: int) -> BloodRequest:
     return request
 
 
-@router.post("/blood-requests/{request_id}/alert-donors", tags=["Blood Requests"])
-def alert_nearby_donors(request_id: int, radius_km: float = Query(30, gt=0, le=200), limit: int = Query(10, ge=1, le=50),
-                        db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
-    """Send this request to the nearest eligible donors with a compatible blood group (they answer in their own dashboard)."""
-    from app.models.hospital import Hospital
+def _donor_candidates(request: BloodRequest, hospital, radius_km: float, limit: int) -> list[dict]:
+    """Nearest available donors whose blood group can be given to this request's group."""
     from app.services import party_service as ps
     from app.services.compatibility import get_compatible_donor_groups
-    request = _own_request(db, user, request_id)
-    hospital = db.get(Hospital, request.hospital_id)
-    if hospital is None or hospital.latitude is None or hospital.longitude is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The hospital has no location, so nearby donors cannot be found.")
     found: dict[int, dict] = {}
     for group in get_compatible_donor_groups(request.blood_group):
         data = ps.call("GET", ps.donor_url() + "/api/v1/donors/nearby", params={
@@ -114,7 +107,51 @@ def alert_nearby_donors(request_id: int, radius_km: float = Query(30, gt=0, le=2
             "blood_group": group, "available": True, "limit": limit})
         for d in data.get("items", []):
             found.setdefault(int(d["id"]), d)
-    ranked = sorted(found.values(), key=lambda d: d.get("distance_km") or 0)[:limit]
+    return sorted(found.values(), key=lambda d: d.get("distance_km") or 0)[:limit]
+
+
+def _hospital_with_location(db: Session, request: BloodRequest):
+    from app.models.hospital import Hospital
+    hospital = db.get(Hospital, request.hospital_id)
+    if hospital is None or hospital.latitude is None or hospital.longitude is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The hospital has no location, so nearby donors cannot be found.")
+    return hospital
+
+
+@router.get("/blood-requests/{request_id}/donor-candidates", tags=["Blood Requests"])
+def donor_candidates(request_id: int, radius_km: float = Query(30, gt=0, le=200), limit: int = Query(12, ge=1, le=50),
+                     db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
+    """Compatible donors near the hospital, each with whether they were already alerted and what they answered."""
+    request = _own_request(db, user, request_id)
+    hospital = _hospital_with_location(db, request)
+    fetched = response_sync.fetch_notifications(request_id)
+    state = {int(n["donor_id"]): n.get("response_status", "pending") for n in fetched["donors"]}
+    out = []
+    for d in _donor_candidates(request, hospital, radius_km, limit):
+        km = d.get("distance_km")
+        out.append({"donor_id": int(d["id"]), "name": d.get("name"), "blood_group": d.get("blood_group"), "city": d.get("city"),
+                    "distance_km": km, "eta_minutes": round((km or 0) / 25 * 60) + 1 if km is not None else None,
+                    "state": state.get(int(d["id"]), "not_notified")})
+    return {"request_id": request_id, "units_required": request.units_required, "donors": out}
+
+
+class AlertDonors(BaseModel):
+    donor_ids: list[int] | None = None
+
+
+@router.post("/blood-requests/{request_id}/alert-donors", tags=["Blood Requests"])
+def alert_nearby_donors(request_id: int, body: AlertDonors | None = None, radius_km: float = Query(30, gt=0, le=200),
+                        limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db), user: User = Depends(require_role(STAFF))):
+    """Alert the chosen donors (or, with no list, the nearest ones); they answer in their own dashboard."""
+    from app.services import party_service as ps
+    request = _own_request(db, user, request_id)
+    hospital = _hospital_with_location(db, request)
+    ranked = _donor_candidates(request, hospital, radius_km, max(limit, 50 if body and body.donor_ids else limit))
+    if body and body.donor_ids:
+        wanted = set(body.donor_ids)
+        ranked = [d for d in ranked if int(d["id"]) in wanted]
+    else:
+        ranked = ranked[:limit]
     sent = 0
     for d in ranked:
         try:
@@ -129,7 +166,7 @@ def alert_nearby_donors(request_id: int, radius_km: float = Query(30, gt=0, le=2
         except HTTPException:
             continue
     return {"request_id": request_id, "donors_found": len(ranked), "notified": sent,
-            "message": f"Alerted {sent} nearby donor(s)." if sent else "No eligible donors were found nearby."}
+            "message": f"Alerted {sent} donor(s)." if sent else "No eligible donors were found nearby."}
 
 
 @router.post("/blood-requests/{request_id}/confirm-delivery", tags=["Blood Requests"])

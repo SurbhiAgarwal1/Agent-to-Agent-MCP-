@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Card from '../common/Card';
 import usePolling from '../../hooks/usePolling';
 import Button from '../common/Button';
-import { getRequestOrder, alertNearbyDonors, confirmDelivery } from '../../api/portal';
+import { getRequestOrder, confirmDelivery } from '../../api/portal';
 
 const TONE = {
   delivered: { bg: '#ecfdf5', border: '#22c55e', fg: '#14532d', icon: '✓✓' },
@@ -76,9 +76,6 @@ export default function OrderStatusPanel({ requestId }) {
       )}
       {data.placed && !['delivered', 'cancelled'].includes(data.stage) && (
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '0.75rem 0' }}>
-          {data.stage !== 'confirmed' && (
-            <Button variant="secondary" disabled={busy} onClick={() => act(alertNearbyDonors, 'Donors alerted.')}>Alert nearby donors</Button>
-          )}
           {data.units_confirmed > 0 && (
             <Button disabled={busy} onClick={() => act(confirmDelivery, 'Delivery confirmed.')}>Confirm delivery received</Button>
           )}

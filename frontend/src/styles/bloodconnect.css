@@ -84,3 +84,27 @@ body { background: var(--bc-page); }
 .btn-secondary, .btn-outline { border-radius: 10px !important; }
 .table th { color: var(--bc-ink); font-weight: 700; }
 a { color: var(--bc-red); }
+
+/* Every text box / dropdown looks like the BloodConnect inputs */
+.form-control, .form-input, .bc-content select, .bc-content textarea,
+.bc-content input:not([type=checkbox]):not([type=radio]):not([type=range]) {
+  border: 1px solid #e3dfe4; border-radius: 10px; padding: .55rem .75rem; font-size: .9rem; background: #fff; color: var(--bc-ink);
+  font-family: inherit; min-height: 2.5rem; box-sizing: border-box;
+}
+.form-control:focus, .form-input:focus, .bc-content select:focus, .bc-content textarea:focus, .bc-content input:focus {
+  outline: 2px solid rgba(166, 27, 43, .25); border-color: var(--bc-red);
+}
+.form-label { font-weight: 700; color: var(--bc-ink); margin-bottom: .3rem; display: inline-block; }
+
+/* Form controls everywhere (filters, selects, inputs) share one comfortable size */
+.form-control, select, input[type="text"], input[type="number"], input[type="email"], input[type="password"], input[type="date"], textarea {
+  border: 1px solid var(--bc-line); border-radius: 10px; padding: .6rem .75rem; font-size: .9rem; background: #fff; color: var(--bc-ink);
+  min-height: 42px; box-sizing: border-box; font-family: inherit;
+}
+.form-control, select.form-control { width: 100%; }
+input[type="checkbox"], input[type="radio"] { min-height: 0; }
+.form-control:focus, select:focus, input:focus, textarea:focus { outline: 2px solid rgba(166, 27, 43, .25); border-color: var(--bc-red); }
+.form-label, label { font-weight: 600; font-size: .82rem; }
+.table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.table th { text-align: left; padding: .65rem .7rem; border-bottom: 1px solid var(--bc-line); background: #faf8f9; }
+.table td { padding: .75rem .7rem; border-bottom: 1px solid #f4f2f5; }

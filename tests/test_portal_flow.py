@@ -236,3 +236,19 @@ def test_stock_edit_targets_the_chosen_component(client, world):
     assert r.status_code == 200, r.text
     rows = {(i["blood_group"], i["component_type"]): i["available_units"] for i in client.get("/api/v1/portal/bank/inventory", headers=h).json()["items"]}
     assert rows[("B+", "whole_blood")] == 9 and rows[("B+", "packed_red_blood_cells")] == 5
+
+
+def test_donor_candidates_and_selective_alert(client, world, db_session):
+    staff = _signup(client, email="cand@hosp.test", password="secret12", role="HOSPITAL_STAFF", organization_name="Cand Hospital", address="1 Rd", latitude=12.97, longitude=77.59)
+    hospital = db_session.query(Hospital).filter(Hospital.name == "Cand Hospital").one()
+    request = BloodRequest(hospital_id=hospital.hospital_id, blood_group="B+", units_required=2, urgency="HIGH", status="PROCESSING")
+    db_session.add(request); db_session.commit()
+    rid = request.request_id
+    donors = [_signup(client, email=f"c{i}@donor.test", password="secret12", role="USER", name=f"Cand Donor {i}", age=30, blood_group="O+", city="Bengaluru", latitude=12.96 + i / 100, longitude=77.6) for i in range(3)]
+    got = client.get(f"/api/v1/blood-requests/{rid}/donor-candidates", headers=staff).json()
+    assert len(got["donors"]) >= 3 and all(d["state"] == "not_notified" for d in got["donors"])
+    pick = got["donors"][0]["donor_id"]
+    sent = client.post(f"/api/v1/blood-requests/{rid}/alert-donors", headers=staff, json={"donor_ids": [pick]}).json()
+    assert sent["notified"] == 1
+    after = {d["donor_id"]: d["state"] for d in client.get(f"/api/v1/blood-requests/{rid}/donor-candidates", headers=staff).json()["donors"]}
+    assert after[pick] == "pending" and sum(1 for s in after.values() if s == "pending") == 1

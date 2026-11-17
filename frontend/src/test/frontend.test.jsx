@@ -471,38 +471,15 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
     expect(await screen.findByText('Your request was received.')).toBeInTheDocument();
   });
 
-  it('BloodRequestDetailsPage renders details and triggers coordination', async () => {
-    const { getBloodRequest, coordinateBloodRequest, getRequestMatches } = await import('../api/bloodRequests.js');
-    getBloodRequest.mockResolvedValue({
-      request_id: 42,
-      hospital_id: 1,
-      blood_group: 'AB+',
-      units_required: 3,
-      urgency: 'HIGH',
-      status: 'PENDING',
-    });
-    getRequestMatches.mockResolvedValue({ matches: [] });
+  it('BloodRequestDetailsPage shows a Place Order button and no A2A workflow block', async () => {
+    const { getBloodRequest, orchestrateBloodRequest } = await import('../api/bloodRequests.js');
+    getBloodRequest.mockResolvedValue({ request_id: 42, hospital_id: 1, blood_group: 'AB+', units_required: 3, urgency: 'HIGH', status: 'PENDING' });
+    orchestrateBloodRequest.mockResolvedValue({ success: true });
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
       user: { id: 1, email: 'admin@example.com', role: 'ADMIN', hospital_ids: [], bank_ids: [] },
       loading: false,
     });
-    coordinateBloodRequest.mockResolvedValue({
-      success: true,
-      current_state: 'COMPLETED',
-      ranked_matches: [
-        {
-          match_id: 1,
-          source_type: 'BLOOD_BANK',
-          source_name: 'Metro Blood Bank',
-          distance_km: 3.2,
-          estimated_travel_time_minutes: 10,
-          status: 'PROPOSED',
-          reserved_units: 3,
-        },
-      ],
-    });
-
     render(
       <MemoryRouter initialEntries={['/blood-requests/42']}>
         <Routes>
@@ -510,18 +487,10 @@ describe('4. Dashboard & Blood Requests Workflows', () => {
         </Routes>
       </MemoryRouter>
     );
-
-    await waitFor(() => {
-      expect(screen.getByText('Emergency Blood Request #42')).toBeInTheDocument();
-    });
-
-    // Trigger coordination
-    fireEvent.click(screen.getByRole('button', { name: /Run A2A Coordination/i }));
-
-    await waitFor(() => {
-      expect(coordinateBloodRequest).toHaveBeenCalledWith(42);
-      expect(screen.getByText(/Metro Blood Bank/i)).toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByText('Blood Request #42')).toBeInTheDocument());
+    expect(screen.queryByText(/A2A Coordination Workflow/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Place Order/i }));
+    await waitFor(() => expect(orchestrateBloodRequest).toHaveBeenCalledWith(42));
   });
 });
 
