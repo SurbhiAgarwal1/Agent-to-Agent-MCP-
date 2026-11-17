@@ -275,3 +275,14 @@ def test_donor_signup_with_listed_name_links_to_that_donor(client, world):
     r = client.post("/api/v1/auth/register", json={"email": "again@x.test", "password": "secret12", "role": "USER", "name": listed["name"],
                                                    "age": 30, "blood_group": listed["blood_group"], "city": "Bengaluru", "latitude": 12.9, "longitude": 77.6})
     assert r.status_code == 409
+
+
+def test_staff_can_raise_a_request_for_any_listed_hospital_with_claim(client, world, db_session):
+    staff = _signup(client, email="own@hosp.test", password="secret12", role="HOSPITAL_STAFF", organization_name="Own Hospital", address="1 Rd", latitude=12.97, longitude=77.59)
+    other = Hospital(name="Some Other Hospital", address="2 Rd", latitude=12.9, longitude=77.6)
+    db_session.add(other); db_session.commit()
+    body = {"hospital_id": other.hospital_id, "blood_group": "O+", "units_required": 1, "urgency": "HIGH"}
+    assert client.post("/api/v1/blood-requests", headers=staff, json=body).status_code == 403   # plain call is still protected
+    made = client.post("/api/v1/blood-requests?claim_hospital=true", headers=staff, json=body)
+    assert made.status_code == 201, made.text
+    assert client.post("/api/v1/blood-requests", headers=staff, json=body).status_code == 201   # now recorded as staff there

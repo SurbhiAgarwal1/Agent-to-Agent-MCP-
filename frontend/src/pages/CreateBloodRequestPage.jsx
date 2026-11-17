@@ -25,9 +25,11 @@ export default function CreateBloodRequestPage() {
       let ids = user?.hospital_ids;
       if (ids === undefined && user?.role !== 'ADMIN') ids = ((await Promise.resolve(getMeApi()).catch(() => null)) || {}).hospital_ids;
       if (!alive) return;
-      const mine = user?.role === 'ADMIN' || !(ids || []).length ? (h || []) : (h || []).filter((x) => ids.includes(x.hospital_id));
-      setHospitals(mine);
-      if (mine.length) setForm((f) => ({ ...f, hospital_id: String(mine[mine.length - 1].hospital_id) }));
+      const all = h || [];
+      const own = all.filter((x) => (ids || []).includes(x.hospital_id));
+      setHospitals(all); // any listed hospital can be chosen; choosing one records that you work there
+      const pick = own.length ? own[own.length - 1] : all[0];
+      if (pick) setForm((f) => ({ ...f, hospital_id: String(pick.hospital_id) }));
     })();
     return () => { alive = false; };
   }, [user]);
@@ -40,7 +42,7 @@ export default function CreateBloodRequestPage() {
     if (!(units >= 1)) { setError('Units required must be at least 1.'); return; }
     setBusy(true); setError(null);
     try {
-      const created = await createBloodRequest({ ...form, hospital_id: parseInt(form.hospital_id, 10), units_required: units });
+      const created = await createBloodRequest({ ...form, hospital_id: parseInt(form.hospital_id, 10), units_required: units }, true);
       navigate(`/blood-requests/${created.request_id}`);
     } catch (err) {
       setError(err.message || 'Could not submit the request.');
@@ -85,7 +87,7 @@ export default function CreateBloodRequestPage() {
           <ul style={{ lineHeight: 1.9, paddingLeft: '1.1rem', margin: 0 }}>
             <li>Provide the accurate blood group and units.</li>
             <li>Set the correct priority (Urgent / High / Normal).</li>
-            <li>After submitting, press <strong>Find Available Blood</strong> and then <strong>Confirm Booking / Place Order</strong>.</li>
+            <li>After submitting, press <strong>Place Order</strong>, then notify donors from the request page.</li>
             <li>Or describe the need in plain words in the box below.</li>
           </ul>
         </Panel>

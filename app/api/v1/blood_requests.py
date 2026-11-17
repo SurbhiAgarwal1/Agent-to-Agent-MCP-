@@ -58,10 +58,14 @@ class RejectMatchBody(BaseModel):
 )
 def create_blood_request(
     payload: BloodRequestCreate,
+    claim_hospital: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.HOSPITAL_STAFF, UserRole.ADMIN])),
 ):
-    """Create a new blood request for a verified hospital."""
+    """Create a new blood request for a verified hospital.
+
+    With claim_hospital=true, hospital staff who pick a listed hospital are recorded as working there
+    (the same thing happens when they name the hospital in the chat box)."""
     # 1. Verify that the hospital exists in the database
     hospital = db.query(Hospital).filter(Hospital.hospital_id == payload.hospital_id).first()
     if not hospital:
@@ -70,7 +74,16 @@ def create_blood_request(
             detail=f"Hospital with ID {payload.hospital_id} not found.",
         )
     if current_user.role != UserRole.ADMIN and not has_hospital_membership(db, current_user.id, hospital.hospital_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active membership in this hospital is required.")
+        if not claim_hospital:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Active membership in this hospital is required.")
+        from app.models.membership import HospitalMembership
+        existing = db.query(HospitalMembership).filter(HospitalMembership.user_id == current_user.id,
+                                                       HospitalMembership.hospital_id == hospital.hospital_id).first()
+        if existing is not None:
+            existing.is_active = True
+        else:
+            db.add(HospitalMembership(user_id=current_user.id, hospital_id=hospital.hospital_id, membership_type="STAFF", is_active=True))
+        db.commit()
 
     # 2. Persist the new blood request with initial status PENDING
     new_request = BloodRequest(

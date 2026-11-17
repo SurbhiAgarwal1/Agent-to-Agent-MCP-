@@ -8,8 +8,8 @@ export async function getBloodRequest(id) {
   return apiClient.get(`/api/v1/blood-requests/${id}`);
 }
 
-export async function createBloodRequest(payload) {
-  return apiClient.post("/api/v1/blood-requests", payload);
+export async function createBloodRequest(payload, claimHospital = false) {
+  return apiClient.post(`/api/v1/blood-requests${claimHospital ? "?claim_hospital=true" : ""}`, payload);
 }
 
 export async function updateBloodRequestStatus(id, status) {
