@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import usePolling from '../../hooks/usePolling';
 import { getDonorCandidates, alertDonors } from '../../api/portal';
 import { Panel } from '../bc';
+import { CallButton } from './VoiceCall';
 
 const STATE = {
   not_notified: ['Not notified', 'gray'], pending: ['Waiting', 'amber'], accepted: ['Accepted', 'green'],
   rejected: ['Declined', 'gray'], declined: ['Declined', 'gray'], unavailable: ['Declined', 'gray'],
 };
 
-export default function DonorCandidatesPanel({ requestId, disabled }) {
+export default function DonorCandidatesPanel({ requestId, disabled, onCall }) {
   const { data, error, refresh } = usePolling(() => getDonorCandidates(requestId), 6000, [requestId]);
   const [picked, setPicked] = useState({});
   const [busy, setBusy] = useState(false);
@@ -48,14 +49,14 @@ export default function DonorCandidatesPanel({ requestId, disabled }) {
               const [label, tone] = STATE[d.state] || [d.state, 'gray'];
               return (
                 <tr key={d.donor_id}>
-                  <td>{d.state === 'not_notified' && !disabled && (
+                  <td style={{ whiteSpace: 'nowrap' }}>{onCall && <CallButton onCall={onCall} source={{ source_type: 'DONOR', source_id: d.donor_id, name: d.name, distance_km: d.distance_km }} />}{' '}{d.state === 'not_notified' && !disabled && (
                     <input type="checkbox" aria-label={`Select ${d.name}`} checked={Boolean(picked[d.donor_id])} onChange={(e) => setPicked((p) => ({ ...p, [d.donor_id]: e.target.checked }))} />)}</td>
                   <td><strong>{d.name}</strong>{d.has_login && <span className="bc-pill bc-p-blue" style={{ marginLeft: 6 }}>Has account</span>}<br /><small>{d.city}</small></td>
                   <td>{d.blood_group}</td>
                   <td>{d.distance_km != null ? `${Number(d.distance_km).toFixed(1)} km` : '—'}</td>
                   <td>{d.eta_minutes != null ? `~${d.eta_minutes} min` : '—'}</td>
                   <td><span className={`bc-pill bc-p-${tone}`}>{label}</span></td>
-                  <td>{d.state === 'not_notified' && !disabled && (
+                  <td style={{ whiteSpace: 'nowrap' }}>{onCall && <CallButton onCall={onCall} source={{ source_type: 'DONOR', source_id: d.donor_id, name: d.name, distance_km: d.distance_km }} />}{' '}{d.state === 'not_notified' && !disabled && (
                     <button type="button" className="bc-btn ghost sm" disabled={busy} onClick={() => send([d.donor_id], 'Donor notified.')}>Notify</button>)}</td>
                 </tr>
               );

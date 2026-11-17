@@ -2,13 +2,14 @@ import React from 'react';
 import Card from '../common/Card';
 import usePolling from '../../hooks/usePolling';
 import { getRequestResponses } from '../../api/portal';
+import { CallButton } from './VoiceCall';
 
 const LABEL = {
   accepted: 'Accepted', partially_available: 'Partially available', rejected: 'Declined',
   declined: 'Declined', unavailable: 'Unavailable', pending: 'Waiting',
 };
 
-export default function ResponsesPanel({ requestId }) {
+export default function ResponsesPanel({ requestId, onCall }) {
   const { data, error } = usePolling(() => getRequestResponses(requestId), 5000, [requestId]);
   if (error && !data) return <Card title="Responses"><p className="text-secondary">{error}</p></Card>;
   if (!data) return null;
@@ -25,7 +26,7 @@ export default function ResponsesPanel({ requestId }) {
       </div>
       {(data.responses || []).length === 0 ? <p className="text-secondary">No one has been notified yet.</p> : (
         <table className="table">
-          <thead><tr><th>From</th><th>Answer</th><th>Units</th><th>Note</th></tr></thead>
+          <thead><tr><th>From</th><th>Answer</th><th>Units</th><th>Note</th>{onCall && <th />}</tr></thead>
           <tbody>
             {data.responses.map((r) => (
               <tr key={`${r.source_type}-${r.notification_id}`}>
@@ -33,6 +34,7 @@ export default function ResponsesPanel({ requestId }) {
                 <td>{LABEL[r.response_status] || r.response_status}</td>
                 <td>{r.units ?? '—'}</td>
                 <td>{r.reason || ''}</td>
+                {onCall && <td><CallButton onCall={onCall} source={{ source_type: r.source_type, source_id: r.source_id, name: r.source_name }} /></td>}
               </tr>
             ))}
           </tbody>

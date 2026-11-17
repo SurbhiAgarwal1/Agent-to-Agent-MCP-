@@ -6,6 +6,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import ResponsesPanel from '../components/coordination/ResponsesPanel';
 import OrderStatusPanel from '../components/coordination/OrderStatusPanel';
 import DonorCandidatesPanel from '../components/coordination/DonorCandidatesPanel';
+import { useVoiceCall } from '../components/coordination/VoiceCall';
 import { PageHeader, StatTile, StatusPill, UrgencyPill } from '../components/bc';
 
 export default function BloodRequestDetailsPage() {
@@ -18,6 +19,7 @@ export default function BloodRequestDetailsPage() {
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
 
+  const voice = useVoiceCall({ request, hospitalName: hospital?.name });
   const load = useCallback(async () => {
     try {
       const r = await getBloodRequest(requestId);
@@ -32,7 +34,10 @@ export default function BloodRequestDetailsPage() {
   const placeOrder = async () => {
     setBusy(true); setError(null); setMessage(null);
     try {
-      await orchestrateBloodRequest(requestId);
+      const res = await orchestrateBloodRequest(requestId);
+      // As before, the voice agent phones the nearest allocated source right after the order is placed.
+      const top = (res?.ranked_matches || res?.allocations || [])[0];
+      if (top) voice.start({ source_type: top.source_type, source_id: top.source_id, name: top.name || top.source_name, distance_km: top.distance_km, phone: top.phone });
       setMessage('Order placed! The nearest blood banks have been notified. Use "Donors who can help" below to alert donors too.');
       await load();
     } catch (err) { setError(err.message || 'We could not place the order. Please try again.'); } finally { setBusy(false); }
@@ -72,9 +77,10 @@ export default function BloodRequestDetailsPage() {
 
       <div style={{ display: 'grid', gap: '1rem' }}>
         <OrderStatusPanel requestId={requestId} />
-        <ResponsesPanel requestId={requestId} />
-        <DonorCandidatesPanel requestId={requestId} disabled={closed} />
+        <ResponsesPanel requestId={requestId} onCall={closed ? null : voice.start} />
+        <DonorCandidatesPanel requestId={requestId} disabled={closed} onCall={closed ? null : voice.start} />
       </div>
+      {voice.modal}
     </div>
   );
 }
